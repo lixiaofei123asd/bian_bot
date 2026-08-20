@@ -3,7 +3,6 @@ package com.lxf.bian_bot.service;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.Interval;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.Period;
 import com.lxf.bian_bot.model.BinanceKline;
-
 import com.lxf.bian_bot.model.BinanceLongShortRatio;
 import java.util.List;
 
@@ -27,6 +26,11 @@ public interface BinanceMarketService {
      * 获取最新 K 线
      */
     BinanceKline getLatestKline(String symbol, Interval interval);
+
+    /**
+     * 强制从 Binance 获取最新 K 线，不读取本地缓存
+     */
+    List<BinanceKline> refreshLatestKlines(String symbol, Interval interval, Long limit);
 
     /**
      * 获取多空账户比

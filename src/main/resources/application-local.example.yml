@@ -4,8 +4,16 @@ binance:
   testnet: false
   base-url: https://fapi.binance.com
   web-socket-api-url: wss://ws-fapi.binance.com/ws-fapi/v1
+  symbol: BTCUSDT,LABUSDT,BTWUSDT
   streams:
     enabled: true
     host: 127.0.0.1
     port: 10090
     web-socket-streams-url: wss://fstream.binance.com/stream
+
+# 每个币种只能配置一个策略
+strategy:
+  symbols:
+    BTCUSDT: STRATEGY1
+    LABUSDT: STRATEGY2
+    BTWUSDT: STRATEGY1

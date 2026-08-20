@@ -5,17 +5,19 @@ import com.binance.connector.client.derivatives_trading_usds_futures.websocket.a
 import com.binance.connector.client.derivatives_trading_usds_futures.websocket.api.model.SymbolPriceTickerRequest;
 import com.binance.connector.client.derivatives_trading_usds_futures.websocket.api.model.SymbolPriceTickerResponse;
 import com.lxf.bian_bot.service.BinanceWebSocketService;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Service;
-
 import java.util.concurrent.CompletableFuture;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
 
 @Slf4j
 @Service
 public class BinanceWebSocketServiceImpl implements BinanceWebSocketService {
 
-    private @Autowired DerivativesTradingUsdsFuturesWebSocketApi webSocketApi;
+    private final DerivativesTradingUsdsFuturesWebSocketApi webSocketApi;
+
+    public BinanceWebSocketServiceImpl(DerivativesTradingUsdsFuturesWebSocketApi webSocketApi) {
+        this.webSocketApi = webSocketApi;
+    }
 
     /**
      * 查询单个交易对最新价格
@@ -62,8 +64,7 @@ public class BinanceWebSocketServiceImpl implements BinanceWebSocketService {
             webSocketApi.stop();
             log.info("Binance WebSocket API 已停止");
         } catch (Exception e) {
-            log.error(
-                    "停止 Binance WebSocket API 失败", e);
+            log.error("停止 Binance WebSocket API 失败", e);
         }
     }
 }

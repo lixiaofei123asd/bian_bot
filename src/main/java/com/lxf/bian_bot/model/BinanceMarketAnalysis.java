@@ -1,6 +1,6 @@
 package com.lxf.bian_bot.model;
 
-import com.lxf.bian_bot.indicator.TradingSignal;
+import com.lxf.bian_bot.analysis.enums.TradingSignal;
 import java.math.BigDecimal;
 import lombok.Data;
 
@@ -18,12 +18,12 @@ public class BinanceMarketAnalysis {
     private BigDecimal currentPrice;
 
     /**
-     * EMA7
+     * MA7
      */
     private BigDecimal ema7;
 
     /**
-     * EMA25
+     * MA25
      */
     private BigDecimal ema25;
 

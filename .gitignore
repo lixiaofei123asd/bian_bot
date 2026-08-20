@@ -12,3 +12,4 @@ target
 *.ipr
 application-local.yml
 /src/test
+data/bian_bot.db

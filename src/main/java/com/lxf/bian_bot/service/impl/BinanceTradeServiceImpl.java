@@ -25,17 +25,18 @@ import com.lxf.bian_bot.service.BinanceTradeService;
 import java.text.DecimalFormat;
 import java.util.List;
 import java.util.Objects;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-@RequiredArgsConstructor
-@Service
 @Slf4j
+@Service
 public class BinanceTradeServiceImpl implements BinanceTradeService {
 
-    private @Autowired DerivativesTradingUsdsFuturesRestApi api;
+    private final DerivativesTradingUsdsFuturesRestApi api;
+
+    public BinanceTradeServiceImpl(DerivativesTradingUsdsFuturesRestApi api) {
+        this.api = api;
+    }
 
     @Override
     public ExchangeInfo getExchangeInfo() {
@@ -111,8 +112,7 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
         request.type(OrderType.LIMIT.name());
         request.symbol(symbol);
         request.side(side);
-        com.binance.connector.client.derivatives_trading_usds_futures.rest.model.TimeInForce timeInForce1 =
-                com.binance.connector.client.derivatives_trading_usds_futures.rest.model.TimeInForce.valueOf(timeInForce.name());
+        com.binance.connector.client.derivatives_trading_usds_futures.rest.model.TimeInForce timeInForce1 = com.binance.connector.client.derivatives_trading_usds_futures.rest.model.TimeInForce.valueOf(timeInForce.name());
         request.setTimeInForce(timeInForce1);
         request.setQuantity(quantity);
         request.setPrice(price);

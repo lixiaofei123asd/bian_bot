@@ -1,9 +1,9 @@
 package com.lxf.bian_bot.scheduler;
 
+import com.lxf.bian_bot.config.BinanceProperties;
 import com.lxf.bian_bot.model.TradingDecision;
 import com.lxf.bian_bot.service.BinanceTradingDecisionService;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -11,7 +11,13 @@ import org.springframework.stereotype.Component;
 @Component
 public class BinanceTradingDecisionScheduler {
 
-    private @Autowired BinanceTradingDecisionService decisionService;
+    private final BinanceTradingDecisionService decisionService;
+    private final BinanceProperties properties;
+
+    public BinanceTradingDecisionScheduler(BinanceTradingDecisionService decisionService, BinanceProperties properties) {
+        this.decisionService = decisionService;
+        this.properties = properties;
+    }
 
     /**
      * 每5秒执行一次交易决策
@@ -19,9 +25,10 @@ public class BinanceTradingDecisionScheduler {
     @Scheduled(fixedDelay = 5000)
     public void analyze() {
         try {
-            String symbol = "BTCUSDT";
-            TradingDecision decision = decisionService.analyze(symbol);
-            log.info("BTCUSDT 当前交易决策: {}", decision.getDecision());
+            for (String symbol : properties.getSymbols()) {
+                TradingDecision decision = decisionService.analyze(symbol);
+                log.info("{} 当前交易决策: {}", symbol, decision.getDecision());
+            }
         } catch (Exception e) {
             log.error("Binance Trading Decision 执行异常", e);
         }
