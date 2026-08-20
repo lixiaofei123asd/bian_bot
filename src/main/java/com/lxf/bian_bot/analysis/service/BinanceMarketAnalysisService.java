@@ -1,4 +1,4 @@
-package com.lxf.bian_bot.service;
+package com.lxf.bian_bot.analysis.service;
 
 import com.lxf.bian_bot.model.TradingDecision;
 

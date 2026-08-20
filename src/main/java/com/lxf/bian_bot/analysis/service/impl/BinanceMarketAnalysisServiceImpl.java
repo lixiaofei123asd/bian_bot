@@ -1,4 +1,4 @@
-package com.lxf.bian_bot.service.impl;
+package com.lxf.bian_bot.analysis.service.impl;
 
 import com.lxf.bian_bot.analysis.Strategy;
 import com.lxf.bian_bot.analysis.enums.TradingSignal;
@@ -9,7 +9,7 @@ import com.lxf.bian_bot.config.StrategyConfig;
 import com.lxf.bian_bot.model.BinanceBookTicker;
 import com.lxf.bian_bot.model.BinanceKline;
 import com.lxf.bian_bot.model.TradingDecision;
-import com.lxf.bian_bot.service.BinanceMarketAnalysisService;
+import com.lxf.bian_bot.analysis.service.BinanceMarketAnalysisService;
 import com.lxf.bian_bot.service.BinanceWebSocketStreamsService;
 import java.math.BigDecimal;
 import java.util.List;
