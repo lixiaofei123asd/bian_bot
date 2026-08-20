@@ -2,15 +2,11 @@ package com.lxf.bian_bot.analysis.service.impl;
 
 import com.lxf.bian_bot.analysis.Strategy;
 import com.lxf.bian_bot.analysis.enums.TradingSignal;
+import com.lxf.bian_bot.analysis.service.BinanceMarketAnalysisService;
 import com.lxf.bian_bot.cache.KlineCache;
-import com.lxf.bian_bot.cache.TickerCache;
-import com.lxf.bian_bot.config.BinanceProperties;
 import com.lxf.bian_bot.config.StrategyConfig;
-import com.lxf.bian_bot.model.BinanceBookTicker;
 import com.lxf.bian_bot.model.BinanceKline;
 import com.lxf.bian_bot.model.TradingDecision;
-import com.lxf.bian_bot.analysis.service.BinanceMarketAnalysisService;
-import com.lxf.bian_bot.service.BinanceWebSocketStreamsService;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Locale;
@@ -21,7 +17,6 @@ import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.context.annotation.ClassPathScanningCandidateComponentProvider;
 import org.springframework.core.type.filter.AssignableTypeFilter;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 @Slf4j
@@ -33,18 +28,12 @@ public class BinanceMarketAnalysisServiceImpl implements BinanceMarketAnalysisSe
 
     private final KlineCache klineCache;
     private final StrategyConfig strategyConfig;
-    private final BinanceProperties properties;
-    private final BinanceWebSocketStreamsService webSocketStreamsService;
-    private final TickerCache tickerCache;
 
     private Map<String, Strategy> strategies = Map.of();
 
-    public BinanceMarketAnalysisServiceImpl(KlineCache klineCache, StrategyConfig strategyConfig, BinanceProperties properties, BinanceWebSocketStreamsService webSocketStreamsService, TickerCache tickerCache) {
+    public BinanceMarketAnalysisServiceImpl(KlineCache klineCache, StrategyConfig strategyConfig) {
         this.klineCache = klineCache;
         this.strategyConfig = strategyConfig;
-        this.properties = properties;
-        this.webSocketStreamsService = webSocketStreamsService;
-        this.tickerCache = tickerCache;
     }
 
     @Override
@@ -60,30 +49,6 @@ public class BinanceMarketAnalysisServiceImpl implements BinanceMarketAnalysisSe
                         strategy -> strategy));
 
         log.info("Strategy初始化完成: {}", strategies.keySet());
-    }
-
-    // 每10秒执行一次所有币种的市场分析
-    @Scheduled(fixedDelay = 10000)
-    public void scheduledAnalysis() {
-        if (!webSocketStreamsService.isConnected()) {
-            log.debug("WebSocket 尚未连接，跳过本次分析");
-            return;
-        }
-
-        try {
-            for (String symbol : properties.getSymbols()) {
-                BinanceBookTicker ticker = tickerCache.get(symbol);
-                if (ticker == null) {
-                    log.debug("{} 尚无最新行情，跳过本次分析", symbol);
-                    continue;
-                }
-
-                TradingDecision decision = analyze(symbol);
-                log.info("{} 当前交易决策: {}", symbol, decision.getDecision());
-            }
-        } catch (Exception e) {
-            log.error("Binance Market Analysis 执行异常", e);
-        }
     }
 
     // 根据类名实例化Strategy实现类
