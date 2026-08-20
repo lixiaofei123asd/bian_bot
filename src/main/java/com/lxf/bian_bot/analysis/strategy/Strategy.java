@@ -6,6 +6,9 @@ import java.util.List;
 
 public interface Strategy {
 
+    // 获取策略名称，用于配置文件匹配
+    String getName();
+
     // 获取策略使用的指标
     List<Indicator> getIndicators();
 
