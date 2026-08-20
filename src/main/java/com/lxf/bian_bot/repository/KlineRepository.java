@@ -7,9 +7,9 @@ public interface KlineRepository {
 
     void initialize();
 
-    void save(BinanceKline kline);
+    void save(String interval, BinanceKline kline);
 
-    void saveAll(List<BinanceKline> klines);
+    void saveAll(String interval, List<BinanceKline> klines);
 
     List<BinanceKline> findLatest(String symbol, String interval, int limit);
 }
