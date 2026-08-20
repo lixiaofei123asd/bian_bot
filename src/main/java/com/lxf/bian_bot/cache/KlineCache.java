@@ -58,7 +58,7 @@ public class KlineCache {
             klines = new ArrayList<>(klines.subList(klines.size() - maxSize, klines.size()));
         }
         cache.put(key, klines);
-        if (Boolean.TRUE.equals(kline.getClosed())) {
+        if (isClosed(kline)) {
             klineRepository.save(interval, kline);
             log.debug("K线已收盘并持久化: symbol={}, interval={}, openTime={}", symbol, interval, kline.getOpenTime());
         }
@@ -75,6 +75,10 @@ public class KlineCache {
     public void clear() {
         cache.invalidateAll();
         log.info("KlineCache 已清空");
+    }
+
+    private boolean isClosed(BinanceKline kline) {
+        return kline.getCloseTime() != null && System.currentTimeMillis() >= kline.getCloseTime();
     }
 
     private String buildKey(String symbol, String interval) {
