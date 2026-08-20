@@ -1,5 +1,6 @@
 package com.lxf.bian_bot.service.impl;
 
+import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.Interval;
 import com.lxf.bian_bot.cache.KlineCache;
 import com.lxf.bian_bot.cache.TickerCache;
 import com.lxf.bian_bot.config.BinanceProperties;
@@ -129,7 +130,7 @@ public class BinanceWebSocketStreamsServiceImpl implements BinanceWebSocketStrea
         log.info("========================================");
         for (String symbol : properties.getSymbols()) {
             try {
-                List<BinanceKline> klines = marketService.getKlines(symbol, com.binance.connector.client.derivatives_trading_usds_futures.rest.model.Interval.INTERVAL_1m, (long) KLINE_CACHE_SIZE);
+                List<BinanceKline> klines = marketService.getKlines(symbol, Interval.INTERVAL_1m, (long) KLINE_CACHE_SIZE);
                 klineCache.put(symbol, KLINE_INTERVAL, klines);
                 log.info("{} {} K线缓存初始化完成: {} 条", symbol, KLINE_INTERVAL, klines.size());
             } catch (Exception e) {
@@ -159,9 +160,17 @@ public class BinanceWebSocketStreamsServiceImpl implements BinanceWebSocketStrea
      * Binance K线处理
      */
     private void handleKline(BinanceKline kline) {
-        if (kline == null) {
+        if (kline == null || kline.getSymbol() == null) {
             return;
         }
-        String symbol = kline.getSymbol();
+        klineCache.update(kline.getSymbol(), KLINE_INTERVAL, kline, KLINE_CACHE_SIZE);
+        log.debug("Binance K线缓存更新: symbol={}, openTime={}, closePrice={}", kline.getSymbol(), kline.getOpenTime(), kline.getClosePrice());
+        for (Consumer<BinanceKline> listener : klineListeners) {
+            try {
+                listener.accept(kline);
+            } catch (Exception e) {
+                log.error("Kline Listener 执行异常", e);
+            }
+        }
     }
 }
