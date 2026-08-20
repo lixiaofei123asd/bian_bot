@@ -9,12 +9,15 @@ import org.springframework.stereotype.Component;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Component
 public class KlineCache {
 
-    private final Cache<String, List<BinanceKline>> cache = Caffeine.newBuilder().build();
+    private final Cache<String, List<BinanceKline>> cache = Caffeine.newBuilder()
+            .expireAfterWrite(30, TimeUnit.SECONDS)
+            .build();
 
     public void put(String symbol, String interval, List<BinanceKline> klines) {
         if (symbol == null || symbol.isBlank() || interval == null || interval.isBlank() || klines == null) {
