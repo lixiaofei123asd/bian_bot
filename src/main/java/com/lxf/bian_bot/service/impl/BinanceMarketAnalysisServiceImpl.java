@@ -5,8 +5,9 @@ import com.lxf.bian_bot.analysis.enums.TradingSignal;
 import com.lxf.bian_bot.cache.KlineCache;
 import com.lxf.bian_bot.config.StrategyConfig;
 import com.lxf.bian_bot.model.BinanceKline;
-import com.lxf.bian_bot.model.BinanceMarketAnalysis;
+import com.lxf.bian_bot.model.TradingDecision;
 import com.lxf.bian_bot.service.BinanceMarketAnalysisService;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -60,46 +61,71 @@ public class BinanceMarketAnalysisServiceImpl implements BinanceMarketAnalysisSe
     }
 
     @Override
-    public BinanceMarketAnalysis analyze(String symbol) {
-        log.info("========== 开始分析 {} ==========", symbol);
+    public TradingDecision analyze(String symbol) {
+        log.info("========== 开始市场分析 {} ==========", symbol);
 
-        // 1. 从本地K线缓存获取数据
+        // 从本地K线缓存获取数据
         List<BinanceKline> klines = klineCache.get(symbol, KLINE_INTERVAL);
         log.debug("从 KlineCache 获取 K线: symbol={}, interval={}, size={}", symbol, KLINE_INTERVAL, klines.size());
 
         if (klines.isEmpty()) {
             log.warn("{} KlineCache 中没有 K线数据", symbol);
-            return new BinanceMarketAnalysis();
+            return buildWaitDecision(symbol, "KlineCache 中没有 K线数据", null);
         }
 
-        // 2. 创建分析结果
-        BinanceMarketAnalysis analysis = new BinanceMarketAnalysis();
-        analysis.setSymbol(symbol);
-        analysis.setCurrentPrice(klines.getLast().getClosePrice());
+        BigDecimal currentPrice = klines.getLast().getClosePrice();
 
-        // 3. 根据币种获取唯一策略
+        // 根据币种获取唯一策略
         String strategyName = strategyConfig.getStrategyName(symbol);
         if (strategyName == null || strategyName.isBlank()) {
-            log.warn("{} 未配置交易策略，跳过策略分析", symbol);
-            analysis.setSignal(TradingSignal.WAIT);
-            return analysis;
+            log.warn("{} 未配置交易策略", symbol);
+            return buildWaitDecision(symbol, "未配置交易策略", currentPrice);
         }
 
         Strategy strategy = strategies.get(strategyName.trim().toUpperCase(Locale.ROOT));
         if (strategy == null) {
-            log.warn("{} 配置了不存在的策略: {}，跳过策略分析", symbol, strategyName);
-            analysis.setSignal(TradingSignal.WAIT);
-            return analysis;
+            log.warn("{} 配置了不存在的策略: {}", symbol, strategyName);
+            return buildWaitDecision(symbol, "配置了不存在的策略: " + strategyName, currentPrice);
         }
 
-        // 4. 同一个币种只执行配置的一个策略
+        // 同一个币种只执行配置的一个策略
         TradingSignal signal = strategy.execute(klines);
-        log.info("策略计算结果: symbol={}, strategy={}, signal={}, requiredMatchCount={}", symbol, strategyName, signal, strategy.getRequiredMatchCount());
+        TradingDecision decision = buildDecision(symbol, currentPrice, signal, strategyName);
 
-        // 5. 保存最终信号
-        analysis.setSignal(signal);
+        log.info("市场分析完成: symbol={}, strategy={}, decision={}", symbol, strategyName, decision.getDecision());
+        return decision;
+    }
 
-        log.info("========== 分析结束 {}，最终信号={} ==========", symbol, signal);
-        return analysis;
+    // 将策略信号转换为最终交易决策
+    private TradingDecision buildDecision(String symbol, BigDecimal currentPrice, TradingSignal signal, String strategyName) {
+        TradingDecision.DecisionType decisionType = switch (signal) {
+            case LONG -> TradingDecision.DecisionType.ENTER_LONG;
+            case SHORT -> TradingDecision.DecisionType.ENTER_SHORT;
+            case WAIT -> TradingDecision.DecisionType.WAIT;
+        };
+
+        TradingDecision.Direction direction = switch (signal) {
+            case LONG -> TradingDecision.Direction.LONG;
+            case SHORT -> TradingDecision.Direction.SHORT;
+            case WAIT -> null;
+        };
+
+        return TradingDecision.builder()
+                .symbol(symbol)
+                .decision(decisionType)
+                .direction(direction)
+                .currentPrice(currentPrice)
+                .reason("策略: " + strategyName + ", 信号: " + signal)
+                .build();
+    }
+
+    // 创建WAIT决策
+    private TradingDecision buildWaitDecision(String symbol, String reason, BigDecimal currentPrice) {
+        return TradingDecision.builder()
+                .symbol(symbol)
+                .decision(TradingDecision.DecisionType.WAIT)
+                .currentPrice(currentPrice)
+                .reason(reason)
+                .build();
     }
 }
