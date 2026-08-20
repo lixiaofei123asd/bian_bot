@@ -4,6 +4,7 @@ binance:
   testnet: false
   base-url: https://fapi.binance.com
   web-socket-api-url: wss://ws-fapi.binance.com/ws-fapi/v1
+  symbol: BTCUSDT,LABUSDT,BTWUSDT
   streams:
     enabled: true
     host: 127.0.0.1
