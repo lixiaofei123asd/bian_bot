@@ -28,7 +28,7 @@ public class IndicatorMa7 implements Indicator {
                 .map(BinanceKline::getClosePrice)
                 .reduce(BigDecimal.ZERO, BigDecimal::add)
                 .divide(BigDecimal.valueOf(PERIOD), 8, RoundingMode.HALF_UP);
-        BigDecimal currentPrice = klines.get(klines.size() - 1).getClosePrice();
+        BigDecimal currentPrice = klines.getLast().getClosePrice();
 
         int result = currentPrice.compareTo(ma7);
         if (result > 0) {

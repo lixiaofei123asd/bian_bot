@@ -75,7 +75,7 @@ public class BinanceMarketAnalysisServiceImpl implements BinanceMarketAnalysisSe
         // 2. 创建分析结果
         BinanceMarketAnalysis analysis = new BinanceMarketAnalysis();
         analysis.setSymbol(symbol);
-        analysis.setCurrentPrice(klines.get(klines.size() - 1).getClosePrice());
+        analysis.setCurrentPrice(klines.getLast().getClosePrice());
 
         // 3. 根据币种获取唯一策略
         String strategyName = strategyConfig.getStrategyName(symbol);
