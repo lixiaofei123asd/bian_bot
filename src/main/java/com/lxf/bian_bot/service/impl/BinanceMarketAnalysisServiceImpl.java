@@ -1,7 +1,5 @@
 package com.lxf.bian_bot.service.impl;
 
-import com.lxf.bian_bot.analysis.indicator.IndicatorMa25;
-import com.lxf.bian_bot.analysis.indicator.IndicatorMa7;
 import com.lxf.bian_bot.analysis.strategy.Strategy;
 import com.lxf.bian_bot.analysis.strategy.TradingSignal;
 import com.lxf.bian_bot.cache.KlineCache;
@@ -28,8 +26,6 @@ public class BinanceMarketAnalysisServiceImpl implements BinanceMarketAnalysisSe
     private static final String STRATEGY_PACKAGE = "com.lxf.bian_bot.analysis.strategy";
 
     private final KlineCache klineCache;
-    private final IndicatorMa7 indicatorMa7;
-    private final IndicatorMa25 indicatorMa25;
     private final StrategyProperties strategyProperties;
 
     private Map<String, Strategy> strategies = Map.of();
@@ -38,8 +34,6 @@ public class BinanceMarketAnalysisServiceImpl implements BinanceMarketAnalysisSe
             KlineCache klineCache,
             StrategyProperties strategyProperties) {
         this.klineCache = klineCache;
-        this.indicatorMa7 = new IndicatorMa7();
-        this.indicatorMa25 = new IndicatorMa25();
         this.strategyProperties = strategyProperties;
     }
 
@@ -85,8 +79,6 @@ public class BinanceMarketAnalysisServiceImpl implements BinanceMarketAnalysisSe
         BinanceMarketAnalysis analysis = new BinanceMarketAnalysis();
         analysis.setSymbol(symbol);
         analysis.setCurrentPrice(klines.get(klines.size() - 1).getClosePrice());
-        analysis.setEma7(indicatorMa7.calculate(klines));
-        analysis.setEma25(indicatorMa25.calculate(klines));
 
         // 3. 根据币种获取唯一策略
         String strategyName = strategyProperties.getSymbols().get(symbol.toUpperCase(Locale.ROOT));
