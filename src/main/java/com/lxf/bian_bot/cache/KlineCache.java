@@ -3,6 +3,7 @@ package com.lxf.bian_bot.cache;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.lxf.bian_bot.model.BinanceKline;
+import com.lxf.bian_bot.repository.KlineRepository;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -14,12 +15,21 @@ import org.springframework.stereotype.Component;
 public class KlineCache {
 
     private final Cache<String, List<BinanceKline>> cache = Caffeine.newBuilder().build();
+    private final KlineRepository klineRepository;
+
+    public KlineCache(KlineRepository klineRepository) {
+        this.klineRepository = klineRepository;
+        this.klineRepository.initialize();
+    }
 
     public void put(String symbol, String interval, List<BinanceKline> klines) {
         if (symbol == null || symbol.isBlank() || interval == null || interval.isBlank() || klines == null) {
             return;
         }
-        cache.put(buildKey(symbol, interval), new ArrayList<>(klines));
+        List<BinanceKline> copy = new ArrayList<>(klines);
+        cache.put(buildKey(symbol, interval), copy);
+        klineRepository.saveAll(interval, copy);
+        log.debug("KlineCache 初始化完成并持久化: symbol={}, interval={}, size={}", symbol, interval, copy.size());
     }
 
     public List<BinanceKline> get(String symbol, String interval) {
@@ -48,6 +58,10 @@ public class KlineCache {
             klines = new ArrayList<>(klines.subList(klines.size() - maxSize, klines.size()));
         }
         cache.put(key, klines);
+        if (Boolean.TRUE.equals(kline.getClosed())) {
+            klineRepository.save(interval, kline);
+            log.debug("K线已收盘并持久化: symbol={}, interval={}, openTime={}", symbol, interval, kline.getOpenTime());
+        }
     }
 
     public boolean contains(String symbol, String interval) {
