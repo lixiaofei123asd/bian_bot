@@ -45,7 +45,7 @@ public class BinanceMarketScheduledService {
                 log.info("{} 当前交易决策: {}", symbol, decision.getDecision());
             }
         } catch (Exception e) {
-            log.error("Binance Market Analysis 执行异常", e);
+            log.error("Binance Market Analysis 执行异常{}", e.getMessage());
         }
     }
 }
