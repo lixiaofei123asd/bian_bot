@@ -5,7 +5,6 @@ import com.lxf.bian_bot.model.AccountInfo;
 import com.lxf.bian_bot.model.PositionInfo;
 import com.lxf.bian_bot.service.BinanceAccountService;
 import com.lxf.bian_bot.service.BinanceTradeService;
-import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -26,19 +25,42 @@ public class TradingStateManager {
         this.tradingState = tradingState;
     }
 
-    // 启动后立即同步一次账户和持仓
+    // 定时刷新账户和持仓状态
     @Scheduled(initialDelay = 1000, fixedDelay = 3000)
     public void refresh() {
         try {
             AccountInfo accountInfo = accountService.getAccountInfo();
             tradingState.updateAccount(accountInfo);
 
+            log.info("========== TradingState 账户状态 ==========");
+            log.info("钱包余额: {}", accountInfo.getTotalWalletBalance());
+            log.info("可用余额: {}", accountInfo.getAvailableBalance());
+            log.info("保证金余额: {}", accountInfo.getTotalMarginBalance());
+            log.info("未实现盈亏: {}", accountInfo.getTotalUnrealizedProfit());
+            log.info("可提现余额: {}", accountInfo.getMaxWithdrawAmount());
+            log.info("账户可交易: {}", accountInfo.isCanTrade());
+
+            log.info("========== TradingState 持仓状态 ==========");
             for (String symbol : properties.getSymbols()) {
                 PositionInfo positionInfo = tradeService.getPosition(symbol);
                 tradingState.updatePosition(positionInfo);
+
+                if (positionInfo == null) {
+                    log.info("{}: 暂无持仓信息", symbol);
+                    continue;
+                }
+
+                log.info("{}: positionAmt={}, entryPrice={}, markPrice={}, unrealizedProfit={}, leverage={}, marginType={}",
+                        symbol,
+                        positionInfo.getPositionAmt(),
+                        positionInfo.getEntryPrice(),
+                        positionInfo.getMarkPrice(),
+                        positionInfo.getUnrealizedProfit(),
+                        positionInfo.getLeverage(),
+                        positionInfo.getMarginType());
             }
 
-            log.debug("TradingState 刷新完成: symbols={}", properties.getSymbols());
+            log.info("============================================");
         } catch (Exception e) {
             log.error("TradingState 刷新失败", e);
         }
