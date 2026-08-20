@@ -1,12 +1,15 @@
 package com.lxf.bian_bot.service.impl;
 
+import com.lxf.bian_bot.analysis.indicator.IndicatorMa25;
+import com.lxf.bian_bot.analysis.indicator.IndicatorMa7;
+import com.lxf.bian_bot.analysis.strategy.Strategy;
+import com.lxf.bian_bot.analysis.strategy.Strategy1;
+import com.lxf.bian_bot.analysis.strategy.Strategy2;
+import com.lxf.bian_bot.analysis.strategy.TradingSignal;
 import com.lxf.bian_bot.cache.KlineCache;
-import com.lxf.bian_bot.indicator.IndicatorEngine;
-import com.lxf.bian_bot.indicator.IndicatorResultStore;
 import com.lxf.bian_bot.model.BinanceKline;
 import com.lxf.bian_bot.model.BinanceMarketAnalysis;
 import com.lxf.bian_bot.service.BinanceMarketAnalysisService;
-import com.lxf.bian_bot.service.BinanceMarketService;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -16,23 +19,24 @@ import org.springframework.stereotype.Service;
 public class BinanceMarketAnalysisServiceImpl implements BinanceMarketAnalysisService {
 
     private static final String KLINE_INTERVAL = "1m";
-    private final BinanceMarketService marketService;
-    private final IndicatorEngine indicatorEngine;
-    private final IndicatorResultStore resultStore;
-    private final KlineCache klineCache;
 
-    public BinanceMarketAnalysisServiceImpl(BinanceMarketService marketService, IndicatorEngine indicatorEngine, IndicatorResultStore resultStore, KlineCache klineCache) {
-        this.marketService = marketService;
-        this.indicatorEngine = indicatorEngine;
-        this.resultStore = resultStore;
+    private final KlineCache klineCache;
+    private final IndicatorMa7 indicatorMa7;
+    private final IndicatorMa25 indicatorMa25;
+    private final List<Strategy> strategies;
+
+    public BinanceMarketAnalysisServiceImpl(KlineCache klineCache) {
         this.klineCache = klineCache;
+        this.indicatorMa7 = new IndicatorMa7();
+        this.indicatorMa25 = new IndicatorMa25();
+        this.strategies = List.of(new Strategy1(), new Strategy2());
     }
 
     @Override
     public BinanceMarketAnalysis analyze(String symbol) {
         log.info("========== 开始分析 {} ==========", symbol);
 
-        /* 1. 获取 K 线*/
+        // 1. 从本地K线缓存获取数据
         List<BinanceKline> klines = klineCache.get(symbol, KLINE_INTERVAL);
         log.debug("从 KlineCache 获取 K线: symbol={}, interval={}, size={}", symbol, KLINE_INTERVAL, klines.size());
 
@@ -41,26 +45,34 @@ public class BinanceMarketAnalysisServiceImpl implements BinanceMarketAnalysisSe
             return new BinanceMarketAnalysis();
         }
 
-        /**2. 创建分析结果*/
+        // 2. 创建分析结果
         BinanceMarketAnalysis analysis = new BinanceMarketAnalysis();
+        analysis.setSymbol(symbol);
+        analysis.setCurrentPrice(klines.get(klines.size() - 1).getClosePrice());
+        analysis.setEma7(indicatorMa7.calculate(klines));
+        analysis.setEma25(indicatorMa25.calculate(klines));
 
-        /**3. 执行指标计算*/
-        indicatorEngine.calculate(klines, analysis);
+        // 3. 执行策略
+        TradingSignal signal = TradingSignal.WAIT;
 
-        /**4. 保存到全局结果*/
-        resultStore.update(symbol, analysis);
+        for (Strategy strategy : strategies) {
+            TradingSignal strategySignal = strategy.execute(klines);
+            log.info("策略计算结果: symbol={}, strategy={}, signal={}, requiredMatchCount={}", symbol, strategy.getClass().getSimpleName(), strategySignal, strategy.getRequiredMatchCount());
 
-        /**
-         * ========================================
-         * 4. 获取多空账户比
-         * ========================================
-         *
-         * 这个数据不是每次都必须请求。
-         *
-         * 后面我们会单独做缓存。
-         */
-//        List<BinanceLongShortRatio> ratios = marketService.getLongShortRatio(symbol, Period.PERIOD_5m, 10L);
-        log.info("========== 分析结束 {} ==========", symbol);
+            if (strategySignal == TradingSignal.LONG) {
+                signal = TradingSignal.LONG;
+                break;
+            }
+
+            if (strategySignal == TradingSignal.SHORT) {
+                signal = TradingSignal.SHORT;
+            }
+        }
+
+        // 4. 保存最终信号
+        analysis.setSignal(signal);
+
+        log.info("========== 分析结束 {}，最终信号={} ==========", symbol, signal);
         return analysis;
     }
 }
