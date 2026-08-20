@@ -11,15 +11,18 @@ import com.lxf.bian_bot.config.StrategyProperties;
 import com.lxf.bian_bot.model.BinanceKline;
 import com.lxf.bian_bot.model.BinanceMarketAnalysis;
 import com.lxf.bian_bot.service.BinanceMarketAnalysisService;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.function.Supplier;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.InitializingBean;
 import org.springframework.stereotype.Service;
 
 @Slf4j
 @Service
-public class BinanceMarketAnalysisServiceImpl implements BinanceMarketAnalysisService {
+public class BinanceMarketAnalysisServiceImpl implements BinanceMarketAnalysisService, InitializingBean {
 
     private static final String KLINE_INTERVAL = "1m";
 
@@ -27,7 +30,8 @@ public class BinanceMarketAnalysisServiceImpl implements BinanceMarketAnalysisSe
     private final IndicatorMa7 indicatorMa7;
     private final IndicatorMa25 indicatorMa25;
     private final StrategyProperties strategyProperties;
-    private final Map<String, Strategy> strategies;
+
+    private Map<String, Strategy> strategies = Map.of();
 
     public BinanceMarketAnalysisServiceImpl(
             KlineCache klineCache,
@@ -36,10 +40,22 @@ public class BinanceMarketAnalysisServiceImpl implements BinanceMarketAnalysisSe
         this.indicatorMa7 = new IndicatorMa7();
         this.indicatorMa25 = new IndicatorMa25();
         this.strategyProperties = strategyProperties;
-        this.strategies = Map.of(
-                "STRATEGY1", new Strategy1(),
-                "STRATEGY2", new Strategy2()
-        );
+    }
+
+    @Override
+    public void afterPropertiesSet() {
+        // 程序启动时自动实例化所有Strategy实现类
+        List<Strategy> strategyList = new ArrayList<>();
+        strategyList.add(new Strategy1());
+        strategyList.add(new Strategy2());
+
+        // 根据Strategy名称自动建立策略Map
+        this.strategies = strategyList.stream()
+                .collect(java.util.stream.Collectors.toUnmodifiableMap(
+                        strategy -> strategy.getName().toUpperCase(Locale.ROOT),
+                        strategy -> strategy));
+
+        log.info("Strategy初始化完成: {}", strategies.keySet());
     }
 
     @Override
