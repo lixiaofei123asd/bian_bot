@@ -24,7 +24,7 @@ import com.lxf.bian_bot.model.PositionInfo;
 import com.lxf.bian_bot.model.TimeInForce;
 import com.lxf.bian_bot.model.TradingMarginType;
 import com.lxf.bian_bot.service.BinanceTradeService;
-import java.text.DecimalFormat;
+import com.lxf.bian_bot.trading.order.OrderParameterCalculator;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -36,9 +36,11 @@ import org.springframework.stereotype.Service;
 public class BinanceTradeServiceImpl implements BinanceTradeService {
 
     private final DerivativesTradingUsdsFuturesRestApi api;
+    private final OrderParameterCalculator orderParameterCalculator;
 
-    public BinanceTradeServiceImpl(DerivativesTradingUsdsFuturesRestApi api) {
+    public BinanceTradeServiceImpl(DerivativesTradingUsdsFuturesRestApi api, OrderParameterCalculator orderParameterCalculator) {
         this.api = api;
+        this.orderParameterCalculator = orderParameterCalculator;
     }
 
     @Override
@@ -79,11 +81,18 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
 
     @Override
     public OrderInfo createMarketOrder(String symbol, Side side, double usdtAmount) {
-        double quantity = calculateQuantity(symbol, side, usdtAmount);
+        ApiResponse<SymbolOrderBookTickerResponse> bookTicker = api.symbolOrderBookTicker(symbol);
+        SymbolOrderBookTickerResponse bookTickerData = bookTicker.getData();
+        double price = Side.BUY.equals(side)
+                ? Double.parseDouble(Objects.requireNonNull(bookTickerData.getSymbolOrderBookTickerResponse1().getAskPrice()))
+                : Double.parseDouble(Objects.requireNonNull(bookTickerData.getSymbolOrderBookTickerResponse1().getBidPrice()));
+        double quantity = orderParameterCalculator.calculateMarketQuantity(symbol, usdtAmount, price);
+
         log.info("========== 市价下单 ==========");
         log.info("交易对：{}", symbol);
         log.info("方向：{}", side);
         log.info("USDT金额：{}", usdtAmount);
+        log.info("盘口价格：{}", price);
         log.info("实际数量：{}", quantity);
         log.info("==============================");
 
@@ -99,7 +108,7 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
 
     @Override
     public OrderInfo createLimitOrder(String symbol, Side side, TimeInForce timeInForce, double usdtAmount, double price) {
-        double quantity = calculateQuantity(symbol, side, usdtAmount);
+        double quantity = orderParameterCalculator.calculateLimitQuantity(symbol, usdtAmount, price);
         log.info("========== 限价下单 ==========");
         log.info("交易对：{}", symbol);
         log.info("方向：{}", side);
@@ -208,22 +217,6 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
                 .liquidationPrice(Double.parseDouble(v2Response.getLiquidationPrice()))
                 .autoAddMargin(Boolean.parseBoolean(v2Response.getIsAutoAddMargin()))
                 .build();
-    }
-
-    private double calculateQuantity(String symbol, Side side, double usdtAmount) {
-        ApiResponse<SymbolOrderBookTickerResponse> bookTicker = api.symbolOrderBookTicker(symbol);
-        SymbolOrderBookTickerResponse bookTickerData = bookTicker.getData();
-        double price = Side.BUY.equals(side)
-                ? Double.parseDouble(Objects.requireNonNull(bookTickerData.getSymbolOrderBookTickerResponse1().getAskPrice()))
-                : Double.parseDouble(Objects.requireNonNull(bookTickerData.getSymbolOrderBookTickerResponse1().getBidPrice()));
-
-        if (price <= 0) {
-            throw new IllegalArgumentException("盘口价格无效：" + price);
-        }
-
-        double quantity = usdtAmount / price;
-        DecimalFormat df = new DecimalFormat("#.#");
-        return Double.parseDouble(df.format(quantity));
     }
 
     private double parseDouble(String value) {
