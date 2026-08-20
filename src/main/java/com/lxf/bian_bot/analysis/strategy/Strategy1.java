@@ -6,11 +6,18 @@ import com.lxf.bian_bot.analysis.indicator.IndicatorMa7;
 import com.lxf.bian_bot.model.BinanceKline;
 import java.math.BigDecimal;
 import java.util.List;
+import org.springframework.stereotype.Component;
 
+@Component
 public class Strategy1 implements Strategy {
 
     private final IndicatorMa7 ma7 = new IndicatorMa7();
     private final IndicatorContinuous continuous = new IndicatorContinuous();
+
+    @Override
+    public String getName() {
+        return "STRATEGY1";
+    }
 
     // 获取策略使用的指标
     @Override
