@@ -1,11 +1,15 @@
 package com.lxf.bian_bot.model;
 
-import lombok.Data;
-
 import java.math.BigDecimal;
+import lombok.Data;
 
 @Data
 public class BinanceKline {
+
+    /**
+     * 交易对
+     */
+    private String symbol;
 
     /**
      * 开盘时间
