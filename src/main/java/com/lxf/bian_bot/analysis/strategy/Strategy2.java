@@ -12,6 +12,11 @@ public class Strategy2 implements Strategy {
     private final IndicatorMa25 ma25 = new IndicatorMa25();
     private final IndicatorContinuous continuous = new IndicatorContinuous();
 
+    @Override
+    public String getName() {
+        return "STRATEGY2";
+    }
+
     // 获取策略使用的指标
     @Override
     public List<Indicator> getIndicators() {
