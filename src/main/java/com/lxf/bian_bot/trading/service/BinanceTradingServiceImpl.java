@@ -1,7 +1,7 @@
 package com.lxf.bian_bot.trading.service;
 
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.Side;
-import com.lxf.bian_bot.config.TradingProperties;
+import com.lxf.bian_bot.config.TradingConfig;
 import com.lxf.bian_bot.model.OrderInfo;
 import com.lxf.bian_bot.model.PositionInfo;
 import com.lxf.bian_bot.model.TradingDecision;
@@ -20,13 +20,13 @@ public class BinanceTradingServiceImpl implements BinanceTradingService {
     private final BinanceTradeService tradeService;
     private final TradingStateManager stateManager;
     private final TradingState tradingState;
-    private final TradingProperties properties;
+    private final TradingConfig tradingConfig;
 
-    public BinanceTradingServiceImpl(BinanceTradeService tradeService, TradingStateManager stateManager, TradingState tradingState, TradingProperties properties) {
+    public BinanceTradingServiceImpl(BinanceTradeService tradeService, TradingStateManager stateManager, TradingState tradingState, TradingConfig tradingConfig) {
         this.tradeService = tradeService;
         this.stateManager = stateManager;
         this.tradingState = tradingState;
-        this.properties = properties;
+        this.tradingConfig = tradingConfig;
     }
 
     @Override
@@ -70,18 +70,18 @@ public class BinanceTradingServiceImpl implements BinanceTradingService {
             tradingState.updateExecutionState(symbol, TradingExecutionState.SUBMITTING);
 
             try {
-                if (!properties.isEnabled()) {
+                if (!tradingConfig.isEnabled()) {
                     log.info("交易执行未启用，收到交易信号但不实际下单: symbol={}, decision={}", symbol, decision.getDecision());
                     tradingState.updateExecutionState(symbol, TradingExecutionState.READY);
                     return;
                 }
 
-                if (properties.isAutoSetLeverage()) {
-                    tradeService.setLeverage(symbol, properties.getLeverage());
+                if (tradingConfig.isAutoSetLeverage()) {
+                    tradeService.setLeverage(symbol, tradingConfig.getLeverage());
                 }
 
                 Side side = TradingDecision.DecisionType.ENTER_LONG.equals(decision.getDecision()) ? Side.BUY : Side.SELL;
-                OrderInfo orderInfo = tradeService.createMarketOrder(symbol, side, properties.getUsdtAmount());
+                OrderInfo orderInfo = tradeService.createMarketOrder(symbol, side, tradingConfig.getUsdtAmount());
                 tradingState.updateOrder(orderInfo);
 
                 log.info("交易订单已提交: symbol={}, decision={}, orderId={}", symbol, decision.getDecision(), orderInfo.getOrderId());
