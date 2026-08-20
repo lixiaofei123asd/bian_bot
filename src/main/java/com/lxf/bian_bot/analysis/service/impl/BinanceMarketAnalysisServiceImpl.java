@@ -13,9 +13,11 @@ import java.math.BigDecimal;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.validation.annotation.Validated;
 
 @Slf4j
 @Service
+@Validated
 public class BinanceMarketAnalysisServiceImpl implements BinanceMarketAnalysisService {
 
     private static final String KLINE_INTERVAL = "1m";
