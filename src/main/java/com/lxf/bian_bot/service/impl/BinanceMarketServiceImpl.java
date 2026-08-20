@@ -11,8 +11,8 @@ import com.lxf.bian_bot.model.BinanceKline;
 import com.lxf.bian_bot.model.BinanceLongShortRatio;
 import com.lxf.bian_bot.service.BinanceMarketService;
 import java.math.BigDecimal;
-import java.util.Collections;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -40,7 +40,7 @@ public class BinanceMarketServiceImpl implements BinanceMarketService {
 
         log.info("获取 Binance K线: symbol={}, interval={}, limit={}", symbol, interval, limit);
         ApiResponse<KlineCandlestickDataResponse> response = api.klineCandlestickData(symbol, interval, null, null, limit);
-        List<BinanceKline> klines = parseKlines(response.getData());
+        List<BinanceKline> klines = parseKlines(response.getData(), symbol);
         klineCache.put(symbol, cacheInterval, klines);
         return klines;
     }
@@ -49,7 +49,7 @@ public class BinanceMarketServiceImpl implements BinanceMarketService {
     public List<BinanceKline> getKlines(String symbol, Interval interval, Long startTime, Long endTime, Long limit) {
         log.info("获取 Binance K线: symbol={}, interval={}, startTime={}, endTime={}, limit={}", symbol, interval, startTime, endTime, limit);
         ApiResponse<KlineCandlestickDataResponse> response = api.klineCandlestickData(symbol, interval, startTime, endTime, limit);
-        List<BinanceKline> klines = parseKlines(response.getData());
+        List<BinanceKline> klines = parseKlines(response.getData(), symbol);
         klineCache.put(symbol, interval.toString(), klines);
         return klines;
     }
@@ -80,7 +80,7 @@ public class BinanceMarketServiceImpl implements BinanceMarketService {
         return new ArrayList<>();
     }
 
-    private List<BinanceKline> parseKlines(KlineCandlestickDataResponse response) {
+    private List<BinanceKline> parseKlines(KlineCandlestickDataResponse response, String symbol) {
         if (response == null) {
             log.warn("Binance K线接口返回为空");
             return Collections.emptyList();
@@ -89,6 +89,7 @@ public class BinanceMarketServiceImpl implements BinanceMarketService {
         List<BinanceKline> result = new ArrayList<>();
         response.forEach(item -> {
             BinanceKline kline = new BinanceKline();
+            kline.setSymbol(symbol);
             kline.setOpenTime(Long.parseLong(item.get(0)));
             kline.setOpenPrice(new BigDecimal(item.get(1)));
             kline.setHighPrice(new BigDecimal(item.get(2)));
