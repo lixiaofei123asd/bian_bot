@@ -3,21 +3,17 @@ package com.lxf.bian_bot.cache;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.lxf.bian_bot.model.BinanceKline;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Component;
-
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
 
 @Slf4j
 @Component
 public class KlineCache {
 
-    private final Cache<String, List<BinanceKline>> cache = Caffeine.newBuilder()
-            .expireAfterWrite(30, TimeUnit.SECONDS)
-            .build();
+    private final Cache<String, List<BinanceKline>> cache = Caffeine.newBuilder().build();
 
     public void put(String symbol, String interval, List<BinanceKline> klines) {
         if (symbol == null || symbol.isBlank() || interval == null || interval.isBlank() || klines == null) {
