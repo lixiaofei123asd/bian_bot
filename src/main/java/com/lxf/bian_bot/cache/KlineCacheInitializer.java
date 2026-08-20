@@ -63,7 +63,7 @@ public class KlineCacheInitializer {
 
         if (cachedKlines.isEmpty()) {
             log.info("SQLite 没有 K线数据，获取最近{}根: symbol={}", MAX_KLINE_SIZE, symbol);
-            List<BinanceKline> latestKlines = marketService.refreshLatestKlines(symbol, Interval.ONE_MINUTE, (long) MAX_KLINE_SIZE);
+            List<BinanceKline> latestKlines = marketService.refreshLatestKlines(symbol, Interval.INTERVAL_1m, (long) MAX_KLINE_SIZE);
             saveAndCache(symbol, latestKlines);
             return;
         }
@@ -74,7 +74,7 @@ public class KlineCacheInitializer {
 
         log.info("SQLite K线恢复检查: symbol={}, latestOpenTime={}, currentOpenTime={}, gap={}, refreshLimit={}", symbol, latestCachedKline.getOpenTime(), currentOpenTime, gap, refreshLimit);
 
-        List<BinanceKline> latestKlines = marketService.refreshLatestKlines(symbol, Interval.ONE_MINUTE, (long) refreshLimit);
+        List<BinanceKline> latestKlines = marketService.refreshLatestKlines(symbol, Interval.INTERVAL_1m, (long) refreshLimit);
         Map<Long, BinanceKline> klineMap = cachedKlines.stream().collect(Collectors.toMap(BinanceKline::getOpenTime, Function.identity(), (oldValue, newValue) -> newValue));
         latestKlines.forEach(kline -> klineMap.put(kline.getOpenTime(), kline));
 
@@ -94,7 +94,6 @@ public class KlineCacheInitializer {
             return;
         }
 
-        klineRepository.saveAll(KLINE_INTERVAL, klines);
         klineCache.put(symbol, KLINE_INTERVAL, klines);
         log.info("KlineCache 恢复完成: symbol={}, interval={}, size={}, latestOpenTime={}", symbol, KLINE_INTERVAL, klines.size(), klines.getLast().getOpenTime());
     }
