@@ -3,6 +3,7 @@ package com.lxf.bian_bot.service;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.Interval;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.Period;
 import com.lxf.bian_bot.model.BinanceKline;
+import com.lxf.bian_bot.model.BinanceLongShortRatio;
 import java.util.List;
 
 public interface BinanceMarketService {
