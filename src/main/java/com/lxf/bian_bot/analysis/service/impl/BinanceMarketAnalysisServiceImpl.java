@@ -8,7 +8,6 @@ import com.lxf.bian_bot.cache.KlineCache;
 import com.lxf.bian_bot.config.StrategyConfig;
 import com.lxf.bian_bot.model.BinanceKline;
 import com.lxf.bian_bot.model.TradingDecision;
-import com.lxf.bian_bot.validation.Symbol;
 import java.math.BigDecimal;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
@@ -32,7 +31,7 @@ public class BinanceMarketAnalysisServiceImpl implements BinanceMarketAnalysisSe
     }
 
     @Override
-    public TradingDecision analyze(@Symbol String symbol) {
+    public TradingDecision analyze(String symbol) {
         log.info("========== 开始市场分析 {} ==========", symbol);
 
         // 从本地K线缓存获取数据
