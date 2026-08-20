@@ -36,8 +36,9 @@ public class OrderParameterCalculator {
             throw new IllegalArgumentException("未找到交易规则：" + symbol);
         }
 
+        BigDecimal priceValue = BigDecimal.valueOf(price);
         BigDecimal quantity = BigDecimal.valueOf(usdtAmount)
-                .divide(BigDecimal.valueOf(price), 20, RoundingMode.DOWN);
+                .divide(priceValue, 20, RoundingMode.DOWN);
 
         BigDecimal minQty = marketOrder && rule.getMarketMinQty() != null
                 ? rule.getMarketMinQty() : rule.getMinQty();
@@ -53,10 +54,20 @@ public class OrderParameterCalculator {
         quantity = quantity.divide(stepSize, 0, RoundingMode.DOWN).multiply(stepSize);
 
         if (minQty != null && quantity.compareTo(minQty) < 0) {
-            throw new IllegalArgumentException(
-                    String.format("%s 下单数量不足：quantity=%s, minQty=%s, usdtAmount=%s, price=%s",
-                            symbol, quantity.stripTrailingZeros().toPlainString(),
-                            minQty.stripTrailingZeros().toPlainString(), usdtAmount, price));
+            quantity = minQty;
+        }
+
+        BigDecimal minNotional = rule.getMinNotional();
+        if (minNotional != null && minNotional.compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal notional = quantity.multiply(priceValue);
+            if (notional.compareTo(minNotional) < 0) {
+                BigDecimal requiredQuantity = minNotional.divide(priceValue, 20, RoundingMode.UP);
+                quantity = requiredQuantity.divide(stepSize, 0, RoundingMode.CEILING).multiply(stepSize);
+            }
+        }
+
+        if (minQty != null && quantity.compareTo(minQty) < 0) {
+            quantity = minQty;
         }
 
         if (maxQty != null && quantity.compareTo(maxQty) > 0) {
@@ -64,6 +75,16 @@ public class OrderParameterCalculator {
                     String.format("%s 下单数量超过最大值：quantity=%s, maxQty=%s",
                             symbol, quantity.stripTrailingZeros().toPlainString(),
                             maxQty.stripTrailingZeros().toPlainString()));
+        }
+
+        BigDecimal finalNotional = quantity.multiply(priceValue);
+        if (minNotional != null && finalNotional.compareTo(minNotional) < 0) {
+            throw new IllegalArgumentException(
+                    String.format("%s 下单名义价值不足：quantity=%s, price=%s, notional=%s, minNotional=%s",
+                            symbol, quantity.stripTrailingZeros().toPlainString(),
+                            priceValue.stripTrailingZeros().toPlainString(),
+                            finalNotional.stripTrailingZeros().toPlainString(),
+                            minNotional.stripTrailingZeros().toPlainString()));
         }
 
         return quantity.doubleValue();
