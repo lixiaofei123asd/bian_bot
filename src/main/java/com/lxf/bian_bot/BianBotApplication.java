@@ -2,6 +2,7 @@ package com.lxf.bian_bot;
 
 import com.lxf.bian_bot.config.BinanceProperties;
 import com.lxf.bian_bot.config.BinanceWebSocketProperties;
+import com.lxf.bian_bot.config.StrategyProperties;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -9,7 +10,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 
 @EnableScheduling
 @SpringBootApplication
-@EnableConfigurationProperties({BinanceProperties.class, BinanceWebSocketProperties.class})
+@EnableConfigurationProperties({BinanceProperties.class, BinanceWebSocketProperties.class, StrategyProperties.class})
 public class BianBotApplication {
 
     public static void main(String[] args) {
