@@ -3,6 +3,7 @@ package com.lxf.bian_bot.service.impl;
 import com.lxf.bian_bot.cache.TickerCache;
 import com.lxf.bian_bot.config.BinanceProperties;
 import com.lxf.bian_bot.model.BinanceBookTicker;
+import com.lxf.bian_bot.model.TradingDecision;
 import com.lxf.bian_bot.service.BinanceMarketAnalysisScheduler;
 import com.lxf.bian_bot.service.BinanceMarketAnalysisService;
 import com.lxf.bian_bot.service.BinanceWebSocketStreamsService;
@@ -17,13 +18,8 @@ import org.springframework.stereotype.Service;
 @Service
 public class BinanceMarketAnalysisSchedulerImpl implements BinanceMarketAnalysisScheduler {
 
-    /**
-     * 分析间隔
-     * <p>
-     * 例如：
-     * 10 秒分析一次
-     */
     private static final long ANALYSIS_INTERVAL_SECONDS = 10;
+
     private final BinanceWebSocketStreamsService webSocketStreamsService;
     private final BinanceMarketAnalysisService marketAnalysisService;
     private final BinanceProperties properties;
@@ -70,8 +66,8 @@ public class BinanceMarketAnalysisSchedulerImpl implements BinanceMarketAnalysis
                     continue;
                 }
 
-                log.info("开始市场分析: symbol={}, bid={}, ask={}", ticker.getSymbol(), ticker.getBidPrice(), ticker.getAskPrice());
-                marketAnalysisService.analyze(ticker.getSymbol());
+                TradingDecision decision = marketAnalysisService.analyze(ticker.getSymbol());
+                log.info("{} 当前交易决策: {}", symbol, decision.getDecision());
             }
         } catch (Exception e) {
             log.error("Binance Market Analysis 执行异常", e);
