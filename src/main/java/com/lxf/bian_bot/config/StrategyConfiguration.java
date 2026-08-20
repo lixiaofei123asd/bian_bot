@@ -1,9 +1,10 @@
 package com.lxf.bian_bot.config;
 
+import java.util.LinkedHashMap;
 import java.util.Locale;
-import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
@@ -13,16 +14,12 @@ public class StrategyConfiguration {
 
     private final StrategyProperties strategyProperties;
 
-    // 获取指定币种配置的策略名称
-    public String getStrategyName(String symbol) {
-        if (symbol == null) {
-            return null;
-        }
-        return strategyProperties.getSymbols().get(symbol.toUpperCase(Locale.ROOT));
-    }
-
-    // 获取全部币种策略配置
-    public Map<String, String> getStrategySymbols() {
-        return strategyProperties.getSymbols();
+    // 将配置文件中的策略配置转换成业务层使用的Bean
+    @Bean
+    public StrategyConfig strategyConfig() {
+        LinkedHashMap<String, String> symbols = new LinkedHashMap<>();
+        strategyProperties.getSymbols().forEach((symbol, strategy) ->
+                symbols.put(symbol.toUpperCase(Locale.ROOT), strategy));
+        return new StrategyConfig(symbols);
     }
 }
