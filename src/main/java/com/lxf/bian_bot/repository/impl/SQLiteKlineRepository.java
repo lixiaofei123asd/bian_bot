@@ -2,6 +2,9 @@ package com.lxf.bian_bot.repository.impl;
 
 import com.lxf.bian_bot.model.BinanceKline;
 import com.lxf.bian_bot.repository.KlineRepository;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -21,6 +24,12 @@ public class SQLiteKlineRepository implements KlineRepository {
 
     @Override
     public void initialize() {
+        try {
+            Files.createDirectories(Path.of("data"));
+        } catch (IOException e) {
+            throw new IllegalStateException("SQLite数据目录创建失败", e);
+        }
+
         String sql = """
                 CREATE TABLE IF NOT EXISTS binance_kline (
                     symbol TEXT NOT NULL,
@@ -36,7 +45,6 @@ public class SQLiteKlineRepository implements KlineRepository {
                     trade_count INTEGER NOT NULL,
                     taker_buy_volume TEXT NOT NULL,
                     taker_buy_quote_volume TEXT NOT NULL,
-                    closed INTEGER NOT NULL,
                     PRIMARY KEY (symbol, interval, open_time)
                 )
                 """;
@@ -50,13 +58,13 @@ public class SQLiteKlineRepository implements KlineRepository {
     }
 
     @Override
-    public void save(BinanceKline kline) {
+    public void save(String interval, BinanceKline kline) {
         String sql = """
                 INSERT INTO binance_kline (
                     symbol, interval, open_time, close_time, open_price, high_price, low_price,
                     close_price, volume, quote_volume, trade_count, taker_buy_volume,
-                    taker_buy_quote_volume, closed
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    taker_buy_quote_volume
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(symbol, interval, open_time) DO UPDATE SET
                     close_time = excluded.close_time,
                     open_price = excluded.open_price,
@@ -67,12 +75,11 @@ public class SQLiteKlineRepository implements KlineRepository {
                     quote_volume = excluded.quote_volume,
                     trade_count = excluded.trade_count,
                     taker_buy_volume = excluded.taker_buy_volume,
-                    taker_buy_quote_volume = excluded.taker_buy_quote_volume,
-                    closed = excluded.closed
+                    taker_buy_quote_volume = excluded.taker_buy_quote_volume
                 """;
 
         try (Connection connection = getConnection(); PreparedStatement statement = connection.prepareStatement(sql)) {
-            bindKline(statement, kline);
+            bindKline(statement, interval, kline);
             statement.executeUpdate();
         } catch (SQLException e) {
             throw new IllegalStateException("SQLite K线保存失败: " + kline.getSymbol(), e);
@@ -80,7 +87,7 @@ public class SQLiteKlineRepository implements KlineRepository {
     }
 
     @Override
-    public void saveAll(List<BinanceKline> klines) {
+    public void saveAll(String interval, List<BinanceKline> klines) {
         if (klines == null || klines.isEmpty()) {
             return;
         }
@@ -89,8 +96,8 @@ public class SQLiteKlineRepository implements KlineRepository {
                 INSERT INTO binance_kline (
                     symbol, interval, open_time, close_time, open_price, high_price, low_price,
                     close_price, volume, quote_volume, trade_count, taker_buy_volume,
-                    taker_buy_quote_volume, closed
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    taker_buy_quote_volume
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(symbol, interval, open_time) DO UPDATE SET
                     close_time = excluded.close_time,
                     open_price = excluded.open_price,
@@ -101,14 +108,13 @@ public class SQLiteKlineRepository implements KlineRepository {
                     quote_volume = excluded.quote_volume,
                     trade_count = excluded.trade_count,
                     taker_buy_volume = excluded.taker_buy_volume,
-                    taker_buy_quote_volume = excluded.taker_buy_quote_volume,
-                    closed = excluded.closed
+                    taker_buy_quote_volume = excluded.taker_buy_quote_volume
                 """;
 
         try (Connection connection = getConnection(); PreparedStatement statement = connection.prepareStatement(sql)) {
             connection.setAutoCommit(false);
             for (BinanceKline kline : klines) {
-                bindKline(statement, kline);
+                bindKline(statement, interval, kline);
                 statement.addBatch();
             }
             statement.executeBatch();
@@ -121,9 +127,9 @@ public class SQLiteKlineRepository implements KlineRepository {
     @Override
     public List<BinanceKline> findLatest(String symbol, String interval, int limit) {
         String sql = """
-                SELECT symbol, interval, open_time, close_time, open_price, high_price, low_price,
+                SELECT symbol, open_time, close_time, open_price, high_price, low_price,
                        close_price, volume, quote_volume, trade_count, taker_buy_volume,
-                       taker_buy_quote_volume, closed
+                       taker_buy_quote_volume
                 FROM binance_kline
                 WHERE symbol = ? AND interval = ?
                 ORDER BY open_time DESC
@@ -152,39 +158,36 @@ public class SQLiteKlineRepository implements KlineRepository {
         return DriverManager.getConnection(DB_URL);
     }
 
-    private void bindKline(PreparedStatement statement, BinanceKline kline) throws SQLException {
+    private void bindKline(PreparedStatement statement, String interval, BinanceKline kline) throws SQLException {
         statement.setString(1, kline.getSymbol());
-        statement.setString(2, kline.getInterval());
+        statement.setString(2, interval);
         statement.setLong(3, kline.getOpenTime());
         statement.setLong(4, kline.getCloseTime());
-        statement.setString(5, kline.getOpenPrice());
-        statement.setString(6, kline.getHighPrice());
-        statement.setString(7, kline.getLowPrice());
-        statement.setString(8, kline.getClosePrice());
-        statement.setString(9, kline.getVolume());
-        statement.setString(10, kline.getQuoteVolume());
-        statement.setInt(11, kline.getTradeCount());
-        statement.setString(12, kline.getTakerBuyVolume());
-        statement.setString(13, kline.getTakerBuyQuoteVolume());
-        statement.setBoolean(14, kline.isClosed());
+        statement.setBigDecimal(5, kline.getOpenPrice());
+        statement.setBigDecimal(6, kline.getHighPrice());
+        statement.setBigDecimal(7, kline.getLowPrice());
+        statement.setBigDecimal(8, kline.getClosePrice());
+        statement.setBigDecimal(9, kline.getVolume());
+        statement.setBigDecimal(10, kline.getQuoteAssetVolume());
+        statement.setLong(11, kline.getNumberOfTrades());
+        statement.setBigDecimal(12, kline.getTakerBuyBaseAssetVolume());
+        statement.setBigDecimal(13, kline.getTakerBuyQuoteAssetVolume());
     }
 
     private BinanceKline map(ResultSet rs) throws SQLException {
-        return BinanceKline.builder()
-                .symbol(rs.getString("symbol"))
-                .interval(rs.getString("interval"))
-                .openTime(rs.getLong("open_time"))
-                .closeTime(rs.getLong("close_time"))
-                .openPrice(rs.getString("open_price"))
-                .highPrice(rs.getString("high_price"))
-                .lowPrice(rs.getString("low_price"))
-                .closePrice(rs.getString("close_price"))
-                .volume(rs.getString("volume"))
-                .quoteVolume(rs.getString("quote_volume"))
-                .tradeCount(rs.getInt("trade_count"))
-                .takerBuyVolume(rs.getString("taker_buy_volume"))
-                .takerBuyQuoteVolume(rs.getString("taker_buy_quote_volume"))
-                .closed(rs.getBoolean("closed"))
-                .build();
+        BinanceKline kline = new BinanceKline();
+        kline.setSymbol(rs.getString("symbol"));
+        kline.setOpenTime(rs.getLong("open_time"));
+        kline.setCloseTime(rs.getLong("close_time"));
+        kline.setOpenPrice(rs.getBigDecimal("open_price"));
+        kline.setHighPrice(rs.getBigDecimal("high_price"));
+        kline.setLowPrice(rs.getBigDecimal("low_price"));
+        kline.setClosePrice(rs.getBigDecimal("close_price"));
+        kline.setVolume(rs.getBigDecimal("volume"));
+        kline.setQuoteAssetVolume(rs.getBigDecimal("quote_volume"));
+        kline.setNumberOfTrades(rs.getLong("trade_count"));
+        kline.setTakerBuyBaseAssetVolume(rs.getBigDecimal("taker_buy_volume"));
+        kline.setTakerBuyQuoteAssetVolume(rs.getBigDecimal("taker_buy_quote_volume"));
+        return kline;
     }
 }
