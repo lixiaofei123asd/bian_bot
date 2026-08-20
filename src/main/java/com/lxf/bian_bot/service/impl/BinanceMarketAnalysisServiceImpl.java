@@ -3,21 +3,21 @@ package com.lxf.bian_bot.service.impl;
 import com.lxf.bian_bot.analysis.indicator.IndicatorMa25;
 import com.lxf.bian_bot.analysis.indicator.IndicatorMa7;
 import com.lxf.bian_bot.analysis.strategy.Strategy;
-import com.lxf.bian_bot.analysis.strategy.Strategy1;
-import com.lxf.bian_bot.analysis.strategy.Strategy2;
 import com.lxf.bian_bot.analysis.strategy.TradingSignal;
 import com.lxf.bian_bot.cache.KlineCache;
 import com.lxf.bian_bot.config.StrategyProperties;
 import com.lxf.bian_bot.model.BinanceKline;
 import com.lxf.bian_bot.model.BinanceMarketAnalysis;
 import com.lxf.bian_bot.service.BinanceMarketAnalysisService;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.function.Supplier;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.InitializingBean;
+import org.springframework.context.annotation.ClassPathScanningCandidateComponentProvider;
+import org.springframework.core.type.filter.AssignableTypeFilter;
 import org.springframework.stereotype.Service;
 
 @Slf4j
@@ -25,6 +25,7 @@ import org.springframework.stereotype.Service;
 public class BinanceMarketAnalysisServiceImpl implements BinanceMarketAnalysisService, InitializingBean {
 
     private static final String KLINE_INTERVAL = "1m";
+    private static final String STRATEGY_PACKAGE = "com.lxf.bian_bot.analysis.strategy";
 
     private final KlineCache klineCache;
     private final IndicatorMa7 indicatorMa7;
@@ -44,18 +45,27 @@ public class BinanceMarketAnalysisServiceImpl implements BinanceMarketAnalysisSe
 
     @Override
     public void afterPropertiesSet() {
-        // 程序启动时自动实例化所有Strategy实现类
-        List<Strategy> strategyList = new ArrayList<>();
-        strategyList.add(new Strategy1());
-        strategyList.add(new Strategy2());
+        // 程序启动时扫描strategy包，自动实例化所有Strategy实现类
+        ClassPathScanningCandidateComponentProvider scanner =
+                new ClassPathScanningCandidateComponentProvider(false);
+        scanner.addIncludeFilter(new AssignableTypeFilter(Strategy.class));
 
-        // 根据Strategy名称自动建立策略Map
-        this.strategies = strategyList.stream()
-                .collect(java.util.stream.Collectors.toUnmodifiableMap(
-                        strategy -> strategy.getName().toUpperCase(Locale.ROOT),
+        this.strategies = scanner.findCandidateComponents(STRATEGY_PACKAGE).stream()
+                .map(beanDefinition -> instantiateStrategy(beanDefinition.getBeanClassName()))
+                .collect(Collectors.toUnmodifiableMap(
+                        strategy -> strategy.getClass().getSimpleName().toUpperCase(Locale.ROOT),
                         strategy -> strategy));
 
         log.info("Strategy初始化完成: {}", strategies.keySet());
+    }
+
+    // 根据类名实例化Strategy实现类
+    private Strategy instantiateStrategy(String className) {
+        try {
+            return BeanUtils.instantiateClass(Class.forName(className).asSubclass(Strategy.class));
+        } catch (ClassNotFoundException e) {
+            throw new IllegalStateException("无法加载Strategy: " + className, e);
+        }
     }
 
     @Override
