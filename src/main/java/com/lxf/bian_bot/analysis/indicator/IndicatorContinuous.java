@@ -1,8 +1,8 @@
 package com.lxf.bian_bot.analysis.indicator;
 
 import com.lxf.bian_bot.analysis.Indicator;
+import com.lxf.bian_bot.analysis.enums.IndicatorSignal;
 import com.lxf.bian_bot.model.BinanceKline;
-import java.math.BigDecimal;
 import java.util.List;
 
 public class IndicatorContinuous implements Indicator {
@@ -13,15 +13,15 @@ public class IndicatorContinuous implements Indicator {
         return "CONTINUOUS";
     }
 
-    // 计算连续涨跌数量，正数表示连续上涨，负数表示连续下跌
+    // 根据连续涨跌方向返回结果
     @Override
-    public BigDecimal calculate(List<BinanceKline> klines) {
+    public IndicatorSignal calculate(List<BinanceKline> klines) {
         if (klines == null || klines.isEmpty()) {
-            return BigDecimal.ZERO;
+            return IndicatorSignal.NEUTRAL;
         }
 
-        int count = 0;
         int direction = 0;
+        int count = 0;
 
         for (int i = klines.size() - 1; i >= 0; i--) {
             BinanceKline kline = klines.get(i);
@@ -42,6 +42,9 @@ public class IndicatorContinuous implements Indicator {
             count++;
         }
 
-        return BigDecimal.valueOf(direction * count);
+        if (count == 0) {
+            return IndicatorSignal.NEUTRAL;
+        }
+        return direction > 0 ? IndicatorSignal.UP : IndicatorSignal.DOWN;
     }
 }
