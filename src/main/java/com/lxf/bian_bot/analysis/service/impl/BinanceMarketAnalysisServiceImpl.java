@@ -1,6 +1,7 @@
 package com.lxf.bian_bot.analysis.service.impl;
 
 import com.lxf.bian_bot.analysis.Strategy;
+import com.lxf.bian_bot.analysis.StrategyRegistry;
 import com.lxf.bian_bot.analysis.enums.TradingSignal;
 import com.lxf.bian_bot.analysis.service.BinanceMarketAnalysisService;
 import com.lxf.bian_bot.cache.KlineCache;
@@ -10,29 +11,22 @@ import com.lxf.bian_bot.model.TradingDecision;
 import com.lxf.bian_bot.validation.Symbol;
 import java.math.BigDecimal;
 import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.BeanUtils;
-import org.springframework.beans.factory.InitializingBean;
-import org.springframework.context.annotation.ClassPathScanningCandidateComponentProvider;
-import org.springframework.core.type.filter.AssignableTypeFilter;
 import org.springframework.stereotype.Service;
 
 @Slf4j
 @Service
-public class BinanceMarketAnalysisServiceImpl implements BinanceMarketAnalysisService, InitializingBean {
+public class BinanceMarketAnalysisServiceImpl implements BinanceMarketAnalysisService {
 
     private static final String KLINE_INTERVAL = "1m";
-    private static final String STRATEGY_PACKAGE = "com.lxf.bian_bot.analysis.strategy";
     private final KlineCache klineCache;
     private final StrategyConfig strategyConfig;
-    private Map<String, Strategy> strategies = Map.of();
+    private final StrategyRegistry strategyRegistry;
 
-    public BinanceMarketAnalysisServiceImpl(KlineCache klineCache, StrategyConfig strategyConfig) {
+    public BinanceMarketAnalysisServiceImpl(KlineCache klineCache, StrategyConfig strategyConfig, StrategyRegistry strategyRegistry) {
         this.klineCache = klineCache;
         this.strategyConfig = strategyConfig;
+        this.strategyRegistry = strategyRegistry;
     }
 
     @Override
@@ -52,7 +46,7 @@ public class BinanceMarketAnalysisServiceImpl implements BinanceMarketAnalysisSe
 
         // 根据币种获取唯一策略
         String strategyName = strategyConfig.getStrategyName(symbol);
-        Strategy strategy = strategies.get(strategyName.trim().toUpperCase(Locale.ROOT));
+        Strategy strategy = strategyRegistry.getStrategy(strategyName);
 
         // 同一个币种只执行配置的一个策略
         TradingSignal signal = strategy.execute(klines);
@@ -93,29 +87,5 @@ public class BinanceMarketAnalysisServiceImpl implements BinanceMarketAnalysisSe
                 .currentPrice(currentPrice)
                 .reason("策略: " + strategyName + ", 信号: " + signal)
                 .build();
-    }
-
-    @Override
-    public void afterPropertiesSet() {
-        // 程序启动时扫描strategy包，自动实例化所有Strategy实现类
-        ClassPathScanningCandidateComponentProvider scanner = new ClassPathScanningCandidateComponentProvider(false);
-        scanner.addIncludeFilter(new AssignableTypeFilter(Strategy.class));
-
-        this.strategies = scanner.findCandidateComponents(STRATEGY_PACKAGE).stream()
-                .map(beanDefinition -> instantiateStrategy(beanDefinition.getBeanClassName()))
-                .collect(Collectors.toUnmodifiableMap(
-                        strategy -> strategy.getClass().getSimpleName().toUpperCase(Locale.ROOT),
-                        strategy -> strategy));
-
-        log.info("Strategy初始化完成: {}", strategies.keySet());
-    }
-
-    // 根据类名实例化Strategy实现类
-    private Strategy instantiateStrategy(String className) {
-        try {
-            return BeanUtils.instantiateClass(Class.forName(className).asSubclass(Strategy.class));
-        } catch (ClassNotFoundException e) {
-            throw new IllegalStateException("无法加载Strategy: " + className, e);
-        }
     }
 }
