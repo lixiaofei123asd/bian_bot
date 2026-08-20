@@ -256,6 +256,7 @@ public class BinanceWebSocketStreamsClient implements WebSocket.Listener {
             return null;
         }
         BinanceKline kline = new BinanceKline();
+        kline.setSymbol(node.path("s").asText());
         kline.setOpenTime(node.path("t").asLong());
         kline.setOpenPrice(new BigDecimal(node.path("o").asText()));
         kline.setHighPrice(new BigDecimal(node.path("h").asText()));
