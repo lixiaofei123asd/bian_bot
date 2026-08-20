@@ -1,12 +1,12 @@
 package com.lxf.bian_bot.analysis.strategy;
 
-import com.lxf.bian_bot.analysis.Strategy;
-import com.lxf.bian_bot.analysis.enums.TradingSignal;
 import com.lxf.bian_bot.analysis.Indicator;
+import com.lxf.bian_bot.analysis.Strategy;
+import com.lxf.bian_bot.analysis.enums.IndicatorSignal;
+import com.lxf.bian_bot.analysis.enums.TradingSignal;
 import com.lxf.bian_bot.analysis.indicator.IndicatorContinuous;
 import com.lxf.bian_bot.analysis.indicator.IndicatorMa7;
 import com.lxf.bian_bot.model.BinanceKline;
-import java.math.BigDecimal;
 import java.util.List;
 import org.springframework.stereotype.Component;
 
@@ -27,37 +27,33 @@ public class Strategy1 implements Strategy {
         return List.of(ma7, continuous);
     }
 
-    // 两个条件都满足才触发
+    // 满足两个指标才触发
     @Override
     public int getRequiredMatchCount() {
         return 2;
     }
 
-    // 连续两根上涨，并且价格在MA7上方，做多
+    // 获取所有指标结果，根据满足数量做出最终判断
     @Override
     public TradingSignal execute(List<BinanceKline> klines) {
-        if (klines == null || klines.isEmpty()) {
-            return TradingSignal.WAIT;
+        int upCount = 0;
+        int downCount = 0;
+
+        for (Indicator indicator : getIndicators()) {
+            IndicatorSignal signal = indicator.calculate(klines);
+            if (signal == IndicatorSignal.UP) {
+                upCount++;
+            } else if (signal == IndicatorSignal.DOWN) {
+                downCount++;
+            }
         }
 
-        BigDecimal ma7Value = ma7.calculate(klines);
-        BigDecimal continuousValue = continuous.calculate(klines);
-        BigDecimal currentPrice = klines.get(klines.size() - 1).getClosePrice();
-
-        if (ma7Value == null || continuousValue == null) {
-            return TradingSignal.WAIT;
+        if (upCount >= getRequiredMatchCount()) {
+            return TradingSignal.LONG;
         }
-
-        int matchedCount = 0;
-
-        if (continuousValue.compareTo(BigDecimal.valueOf(2)) >= 0) {
-            matchedCount++;
+        if (downCount >= getRequiredMatchCount()) {
+            return TradingSignal.SHORT;
         }
-
-        if (currentPrice.compareTo(ma7Value) > 0) {
-            matchedCount++;
-        }
-
-        return matchedCount >= getRequiredMatchCount() ? TradingSignal.LONG : TradingSignal.WAIT;
+        return TradingSignal.WAIT;
     }
 }
