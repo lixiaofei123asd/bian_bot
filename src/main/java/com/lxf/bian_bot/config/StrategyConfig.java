@@ -2,13 +2,15 @@ package com.lxf.bian_bot.config;
 
 import java.util.Map;
 
-public record StrategyConfig(Map<String, String> symbols) {
+public class StrategyConfig {
 
-    // 获取指定币种配置的策略名称
+    private final Map<String, String> symbols;
+
+    public StrategyConfig(Map<String, String> symbols) {
+        this.symbols = symbols;
+    }
+
     public String getStrategyName(String symbol) {
-        if (symbol == null) {
-            return null;
-        }
         return symbols.get(symbol.toUpperCase());
     }
 }

@@ -1,5 +1,6 @@
 package com.lxf.bian_bot.analysis.indicator;
 
+import com.lxf.bian_bot.analysis.Indicator;
 import com.lxf.bian_bot.model.BinanceKline;
 import java.math.BigDecimal;
 import java.util.List;

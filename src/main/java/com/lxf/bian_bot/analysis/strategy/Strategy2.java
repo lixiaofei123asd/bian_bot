@@ -1,6 +1,8 @@
 package com.lxf.bian_bot.analysis.strategy;
 
-import com.lxf.bian_bot.analysis.indicator.Indicator;
+import com.lxf.bian_bot.analysis.Strategy;
+import com.lxf.bian_bot.analysis.enums.TradingSignal;
+import com.lxf.bian_bot.analysis.Indicator;
 import com.lxf.bian_bot.analysis.indicator.IndicatorContinuous;
 import com.lxf.bian_bot.analysis.indicator.IndicatorMa25;
 import com.lxf.bian_bot.model.BinanceKline;

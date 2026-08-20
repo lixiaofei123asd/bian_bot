@@ -1,6 +1,6 @@
-package com.lxf.bian_bot.analysis.strategy;
+package com.lxf.bian_bot.analysis;
 
-import com.lxf.bian_bot.analysis.indicator.Indicator;
+import com.lxf.bian_bot.analysis.enums.TradingSignal;
 import com.lxf.bian_bot.model.BinanceKline;
 import java.util.List;
 

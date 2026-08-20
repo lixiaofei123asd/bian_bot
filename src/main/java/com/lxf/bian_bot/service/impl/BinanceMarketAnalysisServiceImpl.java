@@ -1,7 +1,7 @@
 package com.lxf.bian_bot.service.impl;
 
-import com.lxf.bian_bot.analysis.strategy.Strategy;
-import com.lxf.bian_bot.analysis.strategy.TradingSignal;
+import com.lxf.bian_bot.analysis.Strategy;
+import com.lxf.bian_bot.analysis.enums.TradingSignal;
 import com.lxf.bian_bot.cache.KlineCache;
 import com.lxf.bian_bot.config.StrategyConfig;
 import com.lxf.bian_bot.model.BinanceKline;

@@ -1,4 +1,4 @@
-package com.lxf.bian_bot.analysis.strategy;
+package com.lxf.bian_bot.analysis.enums;
 
 public enum TradingSignal {
 

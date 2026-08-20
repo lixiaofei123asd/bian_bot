@@ -1,6 +1,6 @@
 package com.lxf.bian_bot.model;
 
-import com.lxf.bian_bot.analysis.strategy.TradingSignal;
+import com.lxf.bian_bot.analysis.enums.TradingSignal;
 import java.math.BigDecimal;
 import lombok.Data;
 
