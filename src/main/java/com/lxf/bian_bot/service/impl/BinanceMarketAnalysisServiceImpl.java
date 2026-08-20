@@ -3,7 +3,7 @@ package com.lxf.bian_bot.service.impl;
 import com.lxf.bian_bot.analysis.strategy.Strategy;
 import com.lxf.bian_bot.analysis.strategy.TradingSignal;
 import com.lxf.bian_bot.cache.KlineCache;
-import com.lxf.bian_bot.config.StrategyProperties;
+import com.lxf.bian_bot.config.StrategyConfiguration;
 import com.lxf.bian_bot.model.BinanceKline;
 import com.lxf.bian_bot.model.BinanceMarketAnalysis;
 import com.lxf.bian_bot.service.BinanceMarketAnalysisService;
@@ -26,22 +26,19 @@ public class BinanceMarketAnalysisServiceImpl implements BinanceMarketAnalysisSe
     private static final String STRATEGY_PACKAGE = "com.lxf.bian_bot.analysis.strategy";
 
     private final KlineCache klineCache;
-    private final StrategyProperties strategyProperties;
+    private final StrategyConfiguration strategyConfiguration;
 
     private Map<String, Strategy> strategies = Map.of();
 
-    public BinanceMarketAnalysisServiceImpl(
-            KlineCache klineCache,
-            StrategyProperties strategyProperties) {
+    public BinanceMarketAnalysisServiceImpl(KlineCache klineCache, StrategyConfiguration strategyConfiguration) {
         this.klineCache = klineCache;
-        this.strategyProperties = strategyProperties;
+        this.strategyConfiguration = strategyConfiguration;
     }
 
     @Override
     public void afterPropertiesSet() {
         // 程序启动时扫描strategy包，自动实例化所有Strategy实现类
-        ClassPathScanningCandidateComponentProvider scanner =
-                new ClassPathScanningCandidateComponentProvider(false);
+        ClassPathScanningCandidateComponentProvider scanner = new ClassPathScanningCandidateComponentProvider(false);
         scanner.addIncludeFilter(new AssignableTypeFilter(Strategy.class));
 
         this.strategies = scanner.findCandidateComponents(STRATEGY_PACKAGE).stream()
@@ -81,7 +78,7 @@ public class BinanceMarketAnalysisServiceImpl implements BinanceMarketAnalysisSe
         analysis.setCurrentPrice(klines.get(klines.size() - 1).getClosePrice());
 
         // 3. 根据币种获取唯一策略
-        String strategyName = strategyProperties.getSymbols().get(symbol.toUpperCase(Locale.ROOT));
+        String strategyName = strategyConfiguration.getStrategyName(symbol);
         if (strategyName == null || strategyName.isBlank()) {
             log.warn("{} 未配置交易策略，跳过策略分析", symbol);
             analysis.setSignal(TradingSignal.WAIT);
@@ -97,8 +94,7 @@ public class BinanceMarketAnalysisServiceImpl implements BinanceMarketAnalysisSe
 
         // 4. 同一个币种只执行配置的一个策略
         TradingSignal signal = strategy.execute(klines);
-        log.info("策略计算结果: symbol={}, strategy={}, signal={}, requiredMatchCount={}",
-                symbol, strategyName, signal, strategy.getRequiredMatchCount());
+        log.info("策略计算结果: symbol={}, strategy={}, signal={}, requiredMatchCount={}", symbol, strategyName, signal, strategy.getRequiredMatchCount());
 
         // 5. 保存最终信号
         analysis.setSignal(signal);
