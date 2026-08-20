@@ -10,3 +10,10 @@ binance:
     host: 127.0.0.1
     port: 10090
     web-socket-streams-url: wss://fstream.binance.com/stream
+
+# 每个币种只能配置一个策略
+strategy:
+  symbols:
+    BTCUSDT: STRATEGY1
+    LABUSDT: STRATEGY2
+    BTWUSDT: STRATEGY1
