@@ -3,7 +3,7 @@ package com.lxf.bian_bot.service.impl;
 import com.lxf.bian_bot.analysis.strategy.Strategy;
 import com.lxf.bian_bot.analysis.strategy.TradingSignal;
 import com.lxf.bian_bot.cache.KlineCache;
-import com.lxf.bian_bot.config.StrategyConfiguration;
+import com.lxf.bian_bot.config.StrategyConfig;
 import com.lxf.bian_bot.model.BinanceKline;
 import com.lxf.bian_bot.model.BinanceMarketAnalysis;
 import com.lxf.bian_bot.service.BinanceMarketAnalysisService;
@@ -26,13 +26,13 @@ public class BinanceMarketAnalysisServiceImpl implements BinanceMarketAnalysisSe
     private static final String STRATEGY_PACKAGE = "com.lxf.bian_bot.analysis.strategy";
 
     private final KlineCache klineCache;
-    private final StrategyConfiguration strategyConfiguration;
+    private final StrategyConfig strategyConfig;
 
     private Map<String, Strategy> strategies = Map.of();
 
-    public BinanceMarketAnalysisServiceImpl(KlineCache klineCache, StrategyConfiguration strategyConfiguration) {
+    public BinanceMarketAnalysisServiceImpl(KlineCache klineCache, StrategyConfig strategyConfig) {
         this.klineCache = klineCache;
-        this.strategyConfiguration = strategyConfiguration;
+        this.strategyConfig = strategyConfig;
     }
 
     @Override
@@ -78,7 +78,7 @@ public class BinanceMarketAnalysisServiceImpl implements BinanceMarketAnalysisSe
         analysis.setCurrentPrice(klines.get(klines.size() - 1).getClosePrice());
 
         // 3. 根据币种获取唯一策略
-        String strategyName = strategyConfiguration.getStrategyName(symbol);
+        String strategyName = strategyConfig.getStrategyName(symbol);
         if (strategyName == null || strategyName.isBlank()) {
             log.warn("{} 未配置交易策略，跳过策略分析", symbol);
             analysis.setSignal(TradingSignal.WAIT);
