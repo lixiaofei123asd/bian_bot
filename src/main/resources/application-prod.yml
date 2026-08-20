@@ -1,0 +1,11 @@
+binance:
+  api-key: jQdVqqczpwmu6sH3S9IHzg64YqWEvDzN2gFt6Tfu8vV19Ac8PxeztfaybTNzziTC
+  secret-key: 2nfYo7yPoVjRHpwGvWD6DMVasoKS7WpwodST7cL2bp4uvuPqQVLzXqifMt0YtR5x
+  testnet: true
+  base-url: https://fapi.binance.com
+  web-socket-api-url: wss://ws-fapi.binance.com/ws-fapi/v1
+  streams:
+    enabled: true
+    host: 127.0.0.1
+    port: 10090
+    web-socket-streams-url: wss://fstream.binance.com/stream

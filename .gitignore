@@ -1,0 +1,14 @@
+*.classpath
+*.factorypath
+*.project
+*.class
+.settings
+target
+.idea
+*.iws
+*.iml
+*.log
+/bian_bot/workspace/
+*.ipr
+application-local.yml
+/src/test
