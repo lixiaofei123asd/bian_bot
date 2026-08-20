@@ -1,13 +1,12 @@
 package com.lxf.bian_bot.websocket;
 
 import com.fasterxml.jackson.databind.JavaType;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lxf.bian_bot.model.BinanceBookTicker;
+import com.lxf.bian_bot.model.BinanceKline;
 import com.lxf.bian_bot.model.BinanceStreamMessage;
-import lombok.Getter;
-import lombok.Setter;
-import lombok.extern.slf4j.Slf4j;
-
+import java.math.BigDecimal;
 import java.net.InetSocketAddress;
 import java.net.ProxySelector;
 import java.net.URI;
@@ -19,6 +18,9 @@ import java.util.Set;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
+import lombok.Getter;
+import lombok.Setter;
+import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 public class BinanceWebSocketStreamsClient implements WebSocket.Listener {
@@ -33,9 +35,11 @@ public class BinanceWebSocketStreamsClient implements WebSocket.Listener {
     private volatile boolean connected = false;
     @Setter
     private Consumer<BinanceBookTicker> bookTickerListener;
+    @Setter
+    private Consumer<BinanceKline> klineListener;
     private final Set<String> subscribedSymbols = ConcurrentHashMap.newKeySet();
+    private final Set<String> subscribedKlineStreams = ConcurrentHashMap.newKeySet();
     private volatile long requestId = 1;
-
 
     public BinanceWebSocketStreamsClient(String url, boolean proxyEnabled, String proxyHost, int proxyPort) {
         this.url = url;
@@ -44,7 +48,6 @@ public class BinanceWebSocketStreamsClient implements WebSocket.Listener {
         this.proxyPort = proxyPort;
         this.objectMapper = new ObjectMapper();
     }
-
 
     /**
      * 连接 Binance
@@ -62,24 +65,18 @@ public class BinanceWebSocketStreamsClient implements WebSocket.Listener {
         } else {
             log.info("WebSocket 不使用代理");
         }
-
         HttpClient client = builder.build();
-        client.newWebSocketBuilder()
-                .buildAsync(URI.create(url), this)
-                .thenAccept(socket -> {
-                    this.webSocket = socket;
-                    this.connected = true;
-                    log.info("Binance WebSocket Streams 连接成功");
-                    //自动恢复订阅
-                    restoreSubscriptions();
-                })
-                .exceptionally(throwable -> {
-                    this.connected = false;
-                    log.error("Binance WebSocket Streams 连接失败", throwable);
-                    return null;
-                });
+        client.newWebSocketBuilder().buildAsync(URI.create(url), this).thenAccept(socket -> {
+            this.webSocket = socket;
+            this.connected = true;
+            log.info("Binance WebSocket Streams 连接成功");
+            restoreSubscriptions();
+        }).exceptionally(throwable -> {
+            this.connected = false;
+            log.error("Binance WebSocket Streams 连接失败", throwable);
+            return null;
+        });
     }
-
 
     /**
      * 订阅单个交易对
@@ -93,20 +90,17 @@ public class BinanceWebSocketStreamsClient implements WebSocket.Listener {
             log.info("{} 已经订阅，跳过", symbol);
             return;
         }
-
-
-        // 先记录订阅 这样即使断线， 重连以后也知道需要恢复。
         subscribedSymbols.add(symbol);
-
-        // 当前没有连接
         if (!connected || webSocket == null) {
             log.warn("Binance WebSocket 尚未连接，{} 已加入订阅列表，连接后自动订阅", symbol);
             return;
         }
-        sendSubscribe(symbol);
+        sendSubscribe(symbol.toLowerCase() + "@bookTicker");
     }
 
-    // 批量订阅
+    /**
+     * 批量订阅
+     */
     public void subscribeBookTicker(Iterable<String> symbols) {
         if (symbols == null) {
             return;
@@ -117,20 +111,40 @@ public class BinanceWebSocketStreamsClient implements WebSocket.Listener {
     }
 
     /**
+     * 订阅K线
+     */
+    public void subscribeKline(Iterable<String> symbols, String interval) {
+        if (symbols == null || interval == null || interval.isBlank()) {
+            return;
+        }
+        for (String symbol : symbols) {
+            if (symbol == null || symbol.isBlank()) {
+                continue;
+            }
+            String stream = symbol.trim().toLowerCase() + "@kline_" + interval.trim().toLowerCase();
+            if (!subscribedKlineStreams.add(stream)) {
+                continue;
+            }
+            if (!connected || webSocket == null) {
+                log.warn("Binance WebSocket 尚未连接，K线订阅已加入列表: {}", stream);
+                continue;
+            }
+            sendSubscribe(stream);
+        }
+    }
+
+    /**
      * 发送 SUBSCRIBE
      */
-    private void sendSubscribe(String symbol) {
-        String stream = symbol.toLowerCase() + "@bookTicker";
+    private void sendSubscribe(String stream) {
         long id = requestId++;
-        String request =
-                """
-                        {
-                          "method": "SUBSCRIBE",
-                          "params": ["%s"],
-                          "id": %d
-                        }
-                        """
-                        .formatted(stream, id);
+        String request = """
+                {
+                  "method": "SUBSCRIBE",
+                  "params": ["%s"],
+                  "id": %d
+                }
+                """.formatted(stream, id);
         log.info("发送 Binance SUBSCRIBE: {}", request);
         webSocket.sendText(request, true);
     }
@@ -139,13 +153,17 @@ public class BinanceWebSocketStreamsClient implements WebSocket.Listener {
      * 恢复所有订阅
      */
     private void restoreSubscriptions() {
-        if (subscribedSymbols.isEmpty()) {
-            log.info("没有需要恢复的订阅");
-            return;
+        if (!subscribedSymbols.isEmpty()) {
+            log.info("开始恢复 {} 个BookTicker订阅", subscribedSymbols.size());
+            for (String symbol : subscribedSymbols) {
+                sendSubscribe(symbol.toLowerCase() + "@bookTicker");
+            }
         }
-        log.info("开始恢复 {} 个订阅", subscribedSymbols.size());
-        for (String symbol : subscribedSymbols) {
-            sendSubscribe(symbol);
+        if (!subscribedKlineStreams.isEmpty()) {
+            log.info("开始恢复 {} 个K线订阅", subscribedKlineStreams.size());
+            for (String stream : subscribedKlineStreams) {
+                sendSubscribe(stream);
+            }
         }
     }
 
@@ -170,21 +188,16 @@ public class BinanceWebSocketStreamsClient implements WebSocket.Listener {
         }
         String stream = symbol.toLowerCase() + "@bookTicker";
         long id = requestId++;
-        String request =
-                """
-                        {
-                          "method": "UNSUBSCRIBE",
-                          "params": ["%s"],
-                          "id": %d
-                        }
-                        """
-                        .formatted(stream, id);
+        String request = """
+                {
+                  "method": "UNSUBSCRIBE",
+                  "params": ["%s"],
+                  "id": %d
+                }
+                """.formatted(stream, id);
         log.info("发送 Binance UNSUBSCRIBE: {}", request);
-
-
         webSocket.sendText(request, true);
     }
-
 
     /**
      * WebSocket建立
@@ -203,27 +216,59 @@ public class BinanceWebSocketStreamsClient implements WebSocket.Listener {
         String message = data.toString();
         try {
             log.debug("Binance WebSocket 收到消息: {}", message);
-            // 订阅响应
             if (message.contains("\"result\"")) {
                 log.info("Binance 订阅响应: {}", message);
                 webSocket.request(1);
                 return null;
             }
-
-            /**
-             * Combined Stream
-             */
-            JavaType type = objectMapper.getTypeFactory().constructParametricType(BinanceStreamMessage.class, BinanceBookTicker.class);
-            BinanceStreamMessage<BinanceBookTicker> streamMessage = objectMapper.readValue(message, type);
-            BinanceBookTicker ticker = streamMessage.getData();
-            if (ticker != null && bookTickerListener != null) {
-                bookTickerListener.accept(ticker);
+            JsonNode root = objectMapper.readTree(message);
+            JsonNode dataNode = root.get("data");
+            if (dataNode == null) {
+                webSocket.request(1);
+                return null;
+            }
+            String eventType = dataNode.path("e").asText();
+            if ("bookTicker".equals(eventType)) {
+                JavaType type = objectMapper.getTypeFactory().constructParametricType(BinanceStreamMessage.class, BinanceBookTicker.class);
+                BinanceStreamMessage<BinanceBookTicker> streamMessage = objectMapper.readValue(message, type);
+                BinanceBookTicker ticker = streamMessage.getData();
+                if (ticker != null && bookTickerListener != null) {
+                    bookTickerListener.accept(ticker);
+                }
+            } else if ("kline".equals(eventType)) {
+                BinanceKline kline = parseKline(dataNode.path("k"));
+                if (kline != null && klineListener != null) {
+                    klineListener.accept(kline);
+                }
             }
         } catch (Exception e) {
             log.error("解析 Binance WebSocket 消息失败: {}", message, e);
         }
         webSocket.request(1);
         return null;
+    }
+
+    /**
+     * 解析K线
+     */
+    private BinanceKline parseKline(JsonNode node) {
+        if (node == null || node.isMissingNode()) {
+            return null;
+        }
+        BinanceKline kline = new BinanceKline();
+        kline.setSymbol(node.path("s").asText());
+        kline.setOpenTime(node.path("t").asLong());
+        kline.setOpenPrice(new BigDecimal(node.path("o").asText()));
+        kline.setHighPrice(new BigDecimal(node.path("h").asText()));
+        kline.setLowPrice(new BigDecimal(node.path("l").asText()));
+        kline.setClosePrice(new BigDecimal(node.path("c").asText()));
+        kline.setVolume(new BigDecimal(node.path("v").asText()));
+        kline.setCloseTime(node.path("T").asLong());
+        kline.setQuoteAssetVolume(new BigDecimal(node.path("q").asText()));
+        kline.setNumberOfTrades(node.path("n").asLong());
+        kline.setTakerBuyBaseAssetVolume(new BigDecimal(node.path("V").asText()));
+        kline.setTakerBuyQuoteAssetVolume(new BigDecimal(node.path("Q").asText()));
+        return kline;
     }
 
     /**
@@ -250,6 +295,7 @@ public class BinanceWebSocketStreamsClient implements WebSocket.Listener {
      */
     public void close() {
         subscribedSymbols.clear();
+        subscribedKlineStreams.clear();
         if (webSocket != null) {
             webSocket.sendClose(WebSocket.NORMAL_CLOSURE, "client close");
             webSocket = null;
