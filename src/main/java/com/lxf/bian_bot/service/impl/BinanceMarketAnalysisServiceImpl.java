@@ -7,10 +7,13 @@ import com.lxf.bian_bot.analysis.strategy.Strategy1;
 import com.lxf.bian_bot.analysis.strategy.Strategy2;
 import com.lxf.bian_bot.analysis.strategy.TradingSignal;
 import com.lxf.bian_bot.cache.KlineCache;
+import com.lxf.bian_bot.config.StrategyProperties;
 import com.lxf.bian_bot.model.BinanceKline;
 import com.lxf.bian_bot.model.BinanceMarketAnalysis;
 import com.lxf.bian_bot.service.BinanceMarketAnalysisService;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -23,13 +26,20 @@ public class BinanceMarketAnalysisServiceImpl implements BinanceMarketAnalysisSe
     private final KlineCache klineCache;
     private final IndicatorMa7 indicatorMa7;
     private final IndicatorMa25 indicatorMa25;
-    private final List<Strategy> strategies;
+    private final StrategyProperties strategyProperties;
+    private final Map<String, Strategy> strategies;
 
-    public BinanceMarketAnalysisServiceImpl(KlineCache klineCache) {
+    public BinanceMarketAnalysisServiceImpl(
+            KlineCache klineCache,
+            StrategyProperties strategyProperties) {
         this.klineCache = klineCache;
         this.indicatorMa7 = new IndicatorMa7();
         this.indicatorMa25 = new IndicatorMa25();
-        this.strategies = List.of(new Strategy1(), new Strategy2());
+        this.strategyProperties = strategyProperties;
+        this.strategies = Map.of(
+                "STRATEGY1", new Strategy1(),
+                "STRATEGY2", new Strategy2()
+        );
     }
 
     @Override
@@ -52,24 +62,27 @@ public class BinanceMarketAnalysisServiceImpl implements BinanceMarketAnalysisSe
         analysis.setEma7(indicatorMa7.calculate(klines));
         analysis.setEma25(indicatorMa25.calculate(klines));
 
-        // 3. 执行策略
-        TradingSignal signal = TradingSignal.WAIT;
-
-        for (Strategy strategy : strategies) {
-            TradingSignal strategySignal = strategy.execute(klines);
-            log.info("策略计算结果: symbol={}, strategy={}, signal={}, requiredMatchCount={}", symbol, strategy.getClass().getSimpleName(), strategySignal, strategy.getRequiredMatchCount());
-
-            if (strategySignal == TradingSignal.LONG) {
-                signal = TradingSignal.LONG;
-                break;
-            }
-
-            if (strategySignal == TradingSignal.SHORT) {
-                signal = TradingSignal.SHORT;
-            }
+        // 3. 根据币种获取唯一策略
+        String strategyName = strategyProperties.getSymbols().get(symbol.toUpperCase(Locale.ROOT));
+        if (strategyName == null || strategyName.isBlank()) {
+            log.warn("{} 未配置交易策略，跳过策略分析", symbol);
+            analysis.setSignal(TradingSignal.WAIT);
+            return analysis;
         }
 
-        // 4. 保存最终信号
+        Strategy strategy = strategies.get(strategyName.trim().toUpperCase(Locale.ROOT));
+        if (strategy == null) {
+            log.warn("{} 配置了不存在的策略: {}，跳过策略分析", symbol, strategyName);
+            analysis.setSignal(TradingSignal.WAIT);
+            return analysis;
+        }
+
+        // 4. 同一个币种只执行配置的一个策略
+        TradingSignal signal = strategy.execute(klines);
+        log.info("策略计算结果: symbol={}, strategy={}, signal={}, requiredMatchCount={}",
+                symbol, strategyName, signal, strategy.getRequiredMatchCount());
+
+        // 5. 保存最终信号
         analysis.setSignal(signal);
 
         log.info("========== 分析结束 {}，最终信号={} ==========", symbol, signal);
