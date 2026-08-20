@@ -2,6 +2,7 @@ package com.lxf.bian_bot.repository.impl;
 
 import com.lxf.bian_bot.model.BinanceKline;
 import com.lxf.bian_bot.repository.KlineRepository;
+import jakarta.annotation.PostConstruct;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -21,6 +22,11 @@ import org.springframework.stereotype.Repository;
 public class SQLiteKlineRepository implements KlineRepository {
 
     private static final String DB_URL = "jdbc:sqlite:data/bian_bot.db";
+
+    @PostConstruct
+    public void init() {
+        initialize();
+    }
 
     @Override
     public void initialize() {
