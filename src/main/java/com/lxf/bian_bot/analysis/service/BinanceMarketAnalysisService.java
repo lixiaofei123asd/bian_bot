@@ -1,6 +1,7 @@
 package com.lxf.bian_bot.analysis.service;
 
 import com.lxf.bian_bot.model.TradingDecision;
+import com.lxf.bian_bot.validation.Symbol;
 
 public interface BinanceMarketAnalysisService {
 
@@ -10,5 +11,5 @@ public interface BinanceMarketAnalysisService {
      * @param symbol 交易对
      * @return 交易决策
      */
-    TradingDecision analyze(String symbol);
+    TradingDecision analyze(@Symbol String symbol);
 }
