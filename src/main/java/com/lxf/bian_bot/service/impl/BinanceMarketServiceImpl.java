@@ -64,6 +64,13 @@ public class BinanceMarketServiceImpl implements BinanceMarketService {
     }
 
     @Override
+    public List<BinanceKline> refreshLatestKlines(String symbol, Interval interval, Long limit) {
+        log.info("强制获取 Binance 最新 K线: symbol={}, interval={}, limit={}", symbol, interval, limit);
+        ApiResponse<KlineCandlestickDataResponse> response = api.klineCandlestickData(symbol, interval, null, null, limit);
+        return parseKlines(response.getData(), symbol);
+    }
+
+    @Override
     public List<BinanceLongShortRatio> getLongShortRatio(String symbol, Period period, Long limit) {
         ApiResponse<LongShortRatioResponse> response = api.longShortRatio(symbol, period, limit, null, null);
         if (response.getData() != null) {
