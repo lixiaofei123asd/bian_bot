@@ -1,6 +1,6 @@
 package com.lxf.bian_bot.service.impl;
 
-import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.Interval;
+import com.lxf.bian_bot.cache.KlineCache;
 import com.lxf.bian_bot.indicator.IndicatorEngine;
 import com.lxf.bian_bot.indicator.IndicatorResultStore;
 import com.lxf.bian_bot.model.BinanceKline;
@@ -15,14 +15,17 @@ import org.springframework.stereotype.Service;
 @Service
 public class BinanceMarketAnalysisServiceImpl implements BinanceMarketAnalysisService {
 
+    private static final String KLINE_INTERVAL = "1m";
     private final BinanceMarketService marketService;
     private final IndicatorEngine indicatorEngine;
     private final IndicatorResultStore resultStore;
+    private final KlineCache klineCache;
 
-    public BinanceMarketAnalysisServiceImpl(BinanceMarketService marketService, IndicatorEngine indicatorEngine, IndicatorResultStore resultStore) {
+    public BinanceMarketAnalysisServiceImpl(BinanceMarketService marketService, IndicatorEngine indicatorEngine, IndicatorResultStore resultStore, KlineCache klineCache) {
         this.marketService = marketService;
         this.indicatorEngine = indicatorEngine;
         this.resultStore = resultStore;
+        this.klineCache = klineCache;
     }
 
     @Override
@@ -30,10 +33,11 @@ public class BinanceMarketAnalysisServiceImpl implements BinanceMarketAnalysisSe
         log.info("========== 开始分析 {} ==========", symbol);
 
         /* 1. 获取 K 线*/
-        List<BinanceKline> klines = marketService.getKlines(symbol, Interval.INTERVAL_1m, 100L);
+        List<BinanceKline> klines = klineCache.get(symbol, KLINE_INTERVAL);
+        log.debug("从 KlineCache 获取 K线: symbol={}, interval={}, size={}", symbol, KLINE_INTERVAL, klines.size());
 
-        if (klines == null || klines.isEmpty()) {
-            log.warn("{} K线数据为空", symbol);
+        if (klines.isEmpty()) {
+            log.warn("{} KlineCache 中没有 K线数据", symbol);
             return new BinanceMarketAnalysis();
         }
 
