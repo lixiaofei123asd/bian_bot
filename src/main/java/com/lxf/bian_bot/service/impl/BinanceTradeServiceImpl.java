@@ -2,12 +2,12 @@ package com.lxf.bian_bot.service.impl;
 
 import com.binance.connector.client.common.ApiResponse;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.api.DerivativesTradingUsdsFuturesRestApi;
+import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.AllOrdersResponseInner;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.ChangeInitialLeverageRequest;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.ChangeInitialLeverageResponse;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.ChangeMarginTypeRequest;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.ChangeMarginTypeResponse;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.CurrentAllOpenOrdersResponse;
-import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.CurrentAllOpenOrdersResponseInner;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.MarginType;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.NewOrderRequest;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.NewOrderRespType;
@@ -161,7 +161,7 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
             return orders;
         }
 
-        for (CurrentAllOpenOrdersResponseInner order : data) {
+        for (AllOrdersResponseInner order : data) {
             orders.add(OrderInfo.builder()
                     .symbol(order.getSymbol())
                     .orderId(order.getOrderId() == null ? 0L : order.getOrderId())
