@@ -1,6 +1,7 @@
 package com.lxf.bian_bot.service.impl;
 
 import com.lxf.bian_bot.cache.TickerCache;
+import com.lxf.bian_bot.config.BinanceProperties;
 import com.lxf.bian_bot.model.BinanceBookTicker;
 import com.lxf.bian_bot.service.BinanceMarketAnalysisScheduler;
 import com.lxf.bian_bot.service.BinanceMarketAnalysisService;
@@ -25,6 +26,7 @@ public class BinanceMarketAnalysisSchedulerImpl implements BinanceMarketAnalysis
     private static final long ANALYSIS_INTERVAL_SECONDS = 10;
     private final BinanceWebSocketStreamsService webSocketStreamsService;
     private final BinanceMarketAnalysisService marketAnalysisService;
+    private final BinanceProperties properties;
     private final TickerCache tickerCache;
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -33,9 +35,10 @@ public class BinanceMarketAnalysisSchedulerImpl implements BinanceMarketAnalysis
         return thread;
     });
 
-    public BinanceMarketAnalysisSchedulerImpl(BinanceWebSocketStreamsService webSocketStreamsService, BinanceMarketAnalysisService marketAnalysisService, TickerCache tickerCache) {
+    public BinanceMarketAnalysisSchedulerImpl(BinanceWebSocketStreamsService webSocketStreamsService, BinanceMarketAnalysisService marketAnalysisService, BinanceProperties properties, TickerCache tickerCache) {
         this.webSocketStreamsService = webSocketStreamsService;
         this.marketAnalysisService = marketAnalysisService;
+        this.properties = properties;
         this.tickerCache = tickerCache;
     }
 
@@ -60,14 +63,16 @@ public class BinanceMarketAnalysisSchedulerImpl implements BinanceMarketAnalysis
                 return;
             }
 
-            BinanceBookTicker ticker = tickerCache.get("BTCUSDT");
-            if (ticker == null) {
-                log.debug("BTCUSDT 尚无最新行情，跳过本次分析");
-                return;
-            }
+            for (String symbol : properties.getSymbols()) {
+                BinanceBookTicker ticker = tickerCache.get(symbol);
+                if (ticker == null) {
+                    log.debug("{} 尚无最新行情，跳过本次分析", symbol);
+                    continue;
+                }
 
-            log.info("开始市场分析: symbol={}, bid={}, ask={}", ticker.getSymbol(), ticker.getBidPrice(), ticker.getAskPrice());
-            marketAnalysisService.analyze(ticker.getSymbol());
+                log.info("开始市场分析: symbol={}, bid={}, ask={}", ticker.getSymbol(), ticker.getBidPrice(), ticker.getAskPrice());
+                marketAnalysisService.analyze(ticker.getSymbol());
+            }
         } catch (Exception e) {
             log.error("Binance Market Analysis 执行异常", e);
         }
