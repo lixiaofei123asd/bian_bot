@@ -5,14 +5,12 @@ import com.lxf.bian_bot.model.BinanceBookTicker;
 import com.lxf.bian_bot.service.BinanceMarketAnalysisScheduler;
 import com.lxf.bian_bot.service.BinanceMarketAnalysisService;
 import com.lxf.bian_bot.service.BinanceWebSocketStreamsService;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Service;
-
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
 
 @Slf4j
 @Service
@@ -25,19 +23,21 @@ public class BinanceMarketAnalysisSchedulerImpl implements BinanceMarketAnalysis
      * 10 秒分析一次
      */
     private static final long ANALYSIS_INTERVAL_SECONDS = 10;
-    private @Autowired BinanceWebSocketStreamsService webSocketStreamsService;
-    private @Autowired BinanceMarketAnalysisService marketAnalysisService;
-    private @Autowired TickerCache tickerCache;
+    private final BinanceWebSocketStreamsService webSocketStreamsService;
+    private final BinanceMarketAnalysisService marketAnalysisService;
+    private final TickerCache tickerCache;
     private final AtomicBoolean running = new AtomicBoolean(false);
-    private final ScheduledExecutorService scheduler =
-            Executors.newSingleThreadScheduledExecutor(
-                    r -> {
-                        Thread thread = new Thread(r, "binance-market-analysis");
-                        thread.setDaemon(true);
-                        return thread;
-                    }
-            );
+    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread thread = new Thread(r, "binance-market-analysis");
+        thread.setDaemon(true);
+        return thread;
+    });
 
+    public BinanceMarketAnalysisSchedulerImpl(BinanceWebSocketStreamsService webSocketStreamsService, BinanceMarketAnalysisService marketAnalysisService, TickerCache tickerCache) {
+        this.webSocketStreamsService = webSocketStreamsService;
+        this.marketAnalysisService = marketAnalysisService;
+        this.tickerCache = tickerCache;
+    }
 
     @Override
     public void start() {
@@ -50,14 +50,8 @@ public class BinanceMarketAnalysisSchedulerImpl implements BinanceMarketAnalysis
         log.info("Binance Market Analysis Scheduler 启动");
         log.info("分析间隔: {} 秒", ANALYSIS_INTERVAL_SECONDS);
         log.info("========================================");
-        scheduler.scheduleWithFixedDelay(
-                this::analysis,
-                0,
-                ANALYSIS_INTERVAL_SECONDS,
-                TimeUnit.SECONDS
-        );
+        scheduler.scheduleWithFixedDelay(this::analysis, 0, ANALYSIS_INTERVAL_SECONDS, TimeUnit.SECONDS);
     }
-
 
     private void analysis() {
         try {
@@ -65,11 +59,13 @@ public class BinanceMarketAnalysisSchedulerImpl implements BinanceMarketAnalysis
                 log.debug("WebSocket 尚未连接，跳过本次分析");
                 return;
             }
+
             BinanceBookTicker ticker = tickerCache.get("BTCUSDT");
             if (ticker == null) {
                 log.debug("BTCUSDT 尚无最新行情，跳过本次分析");
                 return;
             }
+
             log.info("开始市场分析: symbol={}, bid={}, ask={}", ticker.getSymbol(), ticker.getBidPrice(), ticker.getAskPrice());
             marketAnalysisService.analyze(ticker.getSymbol());
         } catch (Exception e) {
@@ -77,16 +73,15 @@ public class BinanceMarketAnalysisSchedulerImpl implements BinanceMarketAnalysis
         }
     }
 
-
     @Override
     public void stop() {
         if (!running.compareAndSet(true, false)) {
             return;
         }
+
         log.info("停止 Binance Market Analysis Scheduler");
         scheduler.shutdownNow();
     }
-
 
     @Override
     public boolean isRunning() {

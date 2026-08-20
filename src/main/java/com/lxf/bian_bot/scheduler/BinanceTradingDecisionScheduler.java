@@ -3,7 +3,6 @@ package com.lxf.bian_bot.scheduler;
 import com.lxf.bian_bot.model.TradingDecision;
 import com.lxf.bian_bot.service.BinanceTradingDecisionService;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -11,7 +10,11 @@ import org.springframework.stereotype.Component;
 @Component
 public class BinanceTradingDecisionScheduler {
 
-    private @Autowired BinanceTradingDecisionService decisionService;
+    private final BinanceTradingDecisionService decisionService;
+
+    public BinanceTradingDecisionScheduler(BinanceTradingDecisionService decisionService) {
+        this.decisionService = decisionService;
+    }
 
     /**
      * 每5秒执行一次交易决策

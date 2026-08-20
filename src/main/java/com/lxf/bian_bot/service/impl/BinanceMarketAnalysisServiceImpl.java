@@ -9,16 +9,21 @@ import com.lxf.bian_bot.service.BinanceMarketAnalysisService;
 import com.lxf.bian_bot.service.BinanceMarketService;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 @Slf4j
 @Service
 public class BinanceMarketAnalysisServiceImpl implements BinanceMarketAnalysisService {
 
-    private @Autowired BinanceMarketService marketService;
-    private @Autowired IndicatorEngine indicatorEngine;
-    private @Autowired IndicatorResultStore resultStore;
+    private final BinanceMarketService marketService;
+    private final IndicatorEngine indicatorEngine;
+    private final IndicatorResultStore resultStore;
+
+    public BinanceMarketAnalysisServiceImpl(BinanceMarketService marketService, IndicatorEngine indicatorEngine, IndicatorResultStore resultStore) {
+        this.marketService = marketService;
+        this.indicatorEngine = indicatorEngine;
+        this.resultStore = resultStore;
+    }
 
     @Override
     public BinanceMarketAnalysis analyze(String symbol) {
@@ -50,12 +55,7 @@ public class BinanceMarketAnalysisServiceImpl implements BinanceMarketAnalysisSe
          *
          * 后面我们会单独做缓存。
          */
-//        List<BinanceLongShortRatio> ratios =
-//                marketService.getLongShortRatio(
-//                        symbol,
-//                        Period.PERIOD_5m,
-//                        10L
-//                );
+//        List<BinanceLongShortRatio> ratios = marketService.getLongShortRatio(symbol, Period.PERIOD_5m, 10L);
         log.info("========== 分析结束 {} ==========", symbol);
         return analysis;
     }

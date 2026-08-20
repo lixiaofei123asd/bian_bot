@@ -11,18 +11,20 @@ import com.lxf.bian_bot.model.BinanceLongShortRatio;
 import com.lxf.bian_bot.service.BinanceMarketService;
 import java.math.BigDecimal;
 import java.util.Collections;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Service;
-
 import java.util.ArrayList;
 import java.util.List;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
 
 @Slf4j
 @Service
 public class BinanceMarketServiceImpl implements BinanceMarketService {
 
-    private @Autowired DerivativesTradingUsdsFuturesRestApi api;
+    private final DerivativesTradingUsdsFuturesRestApi api;
+
+    public BinanceMarketServiceImpl(DerivativesTradingUsdsFuturesRestApi api) {
+        this.api = api;
+    }
 
     @Override
     public List<BinanceKline> getKlines(String symbol, Interval interval, Long limit) {
