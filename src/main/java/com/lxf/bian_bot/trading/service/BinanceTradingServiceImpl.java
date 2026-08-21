@@ -81,7 +81,15 @@ public class BinanceTradingServiceImpl implements BinanceTradingService {
                 }
 
                 Side side = TradingDecision.DecisionType.ENTER_LONG.equals(decision.getDecision()) ? Side.BUY : Side.SELL;
-                OrderInfo orderInfo = tradeService.createMarketOrder(symbol, side, tradingConfig.getUsdtAmount());
+                double currentPrice = tradeService.getPosition(symbol).getMarkPrice();
+                OrderInfo orderInfo = tradeService.createLimitOrderAndTPSLForProfitAndLoss(
+                        symbol,
+                        side,
+                        com.lxf.bian_bot.model.TimeInForce.GTC,
+                        tradingConfig.getUsdtAmount() / currentPrice,
+                        currentPrice,
+                        0.02,
+                        0.03);
                 tradingState.updateOrder(orderInfo);
 
                 log.info("交易订单已提交: symbol={}, decision={}, orderId={}", symbol, decision.getDecision(), orderInfo.getOrderId());
