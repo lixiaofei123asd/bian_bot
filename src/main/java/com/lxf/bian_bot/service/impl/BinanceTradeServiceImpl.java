@@ -9,8 +9,6 @@ import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.ChangeMarginTypeResponse;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.CurrentAllOpenOrdersResponse;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.MarginType;
-import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.NewAlgoOrderRequest;
-import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.NewAlgoOrderResponse;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.NewOrderRequest;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.NewOrderRespType;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.NewOrderResponse;
@@ -27,6 +25,7 @@ import com.lxf.bian_bot.model.TimeInForce;
 import com.lxf.bian_bot.model.TradingMarginType;
 import com.lxf.bian_bot.service.BinanceTradeService;
 import com.lxf.bian_bot.trading.order.OrderParameterCalculator;
+import com.lxf.bian_bot.trading.service.PendingOrderProtectionService;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -37,14 +36,16 @@ import org.springframework.stereotype.Service;
 @Service
 public class BinanceTradeServiceImpl implements BinanceTradeService {
 
-    public static final String algoType = "CONDITIONAL";
-    public static final String closePosition = "true";
     private final DerivativesTradingUsdsFuturesRestApi api;
     private final OrderParameterCalculator orderParameterCalculator;
+    private final PendingOrderProtectionService pendingOrderProtectionService;
 
-    public BinanceTradeServiceImpl(DerivativesTradingUsdsFuturesRestApi api, OrderParameterCalculator orderParameterCalculator) {
+    public BinanceTradeServiceImpl(DerivativesTradingUsdsFuturesRestApi api,
+                                   OrderParameterCalculator orderParameterCalculator,
+                                   PendingOrderProtectionService pendingOrderProtectionService) {
         this.api = api;
         this.orderParameterCalculator = orderParameterCalculator;
+        this.pendingOrderProtectionService = pendingOrderProtectionService;
     }
 
     @Override
@@ -61,11 +62,10 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
 
     @Override
     public boolean setMarginType(String symbol, TradingMarginType tradingMarginType) {
-        ChangeMarginTypeRequest changeMarginTypeRequest = new ChangeMarginTypeRequest();
-        changeMarginTypeRequest.symbol(symbol);
-        MarginType type = MarginType.valueOf(tradingMarginType.name());
-        changeMarginTypeRequest.marginType(type);
-        ApiResponse<ChangeMarginTypeResponse> response = api.changeMarginType(changeMarginTypeRequest);
+        ChangeMarginTypeRequest request = new ChangeMarginTypeRequest();
+        request.symbol(symbol);
+        request.marginType(MarginType.valueOf(tradingMarginType.name()));
+        ApiResponse<ChangeMarginTypeResponse> response = api.changeMarginType(request);
         return "success".equalsIgnoreCase(response.getData().getMsg());
     }
 
@@ -105,7 +105,6 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
         request.symbol(symbol);
         request.side(side);
         request.setQuantity(quantity);
-
         return newOrder(request, "下单失败！");
     }
 
@@ -113,6 +112,7 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
     public OrderInfo createLimitOrder(String symbol, Side side, TimeInForce timeInForce, double usdtAmount, double price) {
         price = orderParameterCalculator.normalizeEntryPrice(symbol, price, Side.BUY.equals(side));
         double quantity = orderParameterCalculator.calculateLimitQuantity(symbol, usdtAmount, price);
+
         log.info("========== 限价下单 ==========");
         log.info("交易对：{}", symbol);
         log.info("方向：{}", side);
@@ -126,17 +126,16 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
         request.type(OrderType.LIMIT.name());
         request.symbol(symbol);
         request.side(side);
-        request.setTimeInForce(
-                com.binance.connector.client.derivatives_trading_usds_futures.rest.model.TimeInForce.valueOf(timeInForce.name()));
+        request.setTimeInForce(com.binance.connector.client.derivatives_trading_usds_futures.rest.model.TimeInForce.valueOf(timeInForce.name()));
         request.setQuantity(quantity);
         request.setPrice(price);
         request.setNewOrderRespType(NewOrderRespType.RESULT);
-
         return newOrder(request, "限价下单失败！");
     }
 
     @Override
-    public OrderInfo createLimitOrderAndTPSLForPrice(String symbol, Side side, TimeInForce timeInForce, double quantity, double price, double tp, double sl) {
+    public OrderInfo createLimitOrderAndTPSLForPrice(String symbol, Side side, TimeInForce timeInForce,
+                                                       double quantity, double price, double tp, double sl) {
         if (quantity <= 0) {
             throw new IllegalArgumentException("下单数量必须大于 0：" + quantity);
         }
@@ -156,8 +155,7 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
         entryRequest.type(OrderType.LIMIT.name());
         entryRequest.symbol(symbol);
         entryRequest.side(side);
-        entryRequest.setTimeInForce(
-                com.binance.connector.client.derivatives_trading_usds_futures.rest.model.TimeInForce.valueOf(timeInForce.name()));
+        entryRequest.setTimeInForce(com.binance.connector.client.derivatives_trading_usds_futures.rest.model.TimeInForce.valueOf(timeInForce.name()));
         entryRequest.setQuantity(quantity);
         entryRequest.setPrice(price);
         entryRequest.setNewOrderRespType(NewOrderRespType.RESULT);
@@ -167,8 +165,8 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
         log.info("开仓方向：{}", side);
         log.info("数量：{}", quantity);
         log.info("开仓价格：{}", price);
-        log.info("止盈价格：{}", tp);
-        log.info("止损价格：{}", sl);
+        log.info("预计算止盈价格：{}", tp);
+        log.info("预计算止损价格：{}", sl);
 
         ApiResponse<NewOrderResponse> entryResponse = api.newOrder(entryRequest);
         if (entryResponse.getStatusCode() != 200 || entryResponse.getData() == null) {
@@ -179,28 +177,22 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
         OrderInfo entryOrder = toOrderInfo(entryData);
 
         log.info("限价开仓订单已提交: orderId={}, status={}, executedQty={}, avgPrice={}",
-                entryData.getOrderId(),
-                entryData.getStatus(),
-                entryData.getExecutedQty(),
-                entryData.getAvgPrice());
+                entryData.getOrderId(), entryData.getStatus(), entryData.getExecutedQty(), entryData.getAvgPrice());
 
-        // Binance 的 TP/SL 是独立的 CONDITIONAL algo order。
-        // 限价开仓单处于 NEW 时也可以先提交 closePosition=true 的保护单，
-        // 这样与网页端“挂限价单的同时设置止盈止损”的使用方式一致。
-        // 保护单触发后只会平掉当前持仓，不需要提前知道实际持仓数量。
-        Side closeSide = side == Side.BUY ? Side.SELL : Side.BUY;
+        // TP/SL 使用 closePosition=true，只能在真正存在持仓后创建。
+        // 因此 NEW 状态的限价单只登记保护任务，不直接提交保护单。
+        pendingOrderProtectionService.register(symbol, entryData.getOrderId(), side, 0.02D, 0.03D);
 
-        createClosePositionAlgoOrder(symbol, closeSide, OrderType.STOP_MARKET, sl, "SL");
-        createClosePositionAlgoOrder(symbol, closeSide, OrderType.TAKE_PROFIT_MARKET, tp, "TP");
-
-        log.info("止盈止损保护单已提交: symbol={}, entryOrderId={}, tp={}, sl={}, entryStatus={}",
-                symbol, entryData.getOrderId(), tp, sl, entryData.getStatus());
+        log.info("限价开仓保护任务已等待成交: symbol={}, orderId={}, status={}",
+                symbol, entryData.getOrderId(), entryData.getStatus());
         log.info("=========================================");
         return entryOrder;
     }
 
     @Override
-    public OrderInfo createLimitOrderAndTPSLForProfitAndLoss(String symbol, Side side, TimeInForce timeInForce, double quantity, double price, double profitAmount, double lossAmount) {
+    public OrderInfo createLimitOrderAndTPSLForProfitAndLoss(String symbol, Side side, TimeInForce timeInForce,
+                                                               double quantity, double price, double profitAmount,
+                                                               double lossAmount) {
         if (quantity <= 0) {
             throw new IllegalArgumentException("下单数量必须大于 0：" + quantity);
         }
@@ -208,7 +200,6 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
             throw new IllegalArgumentException("盈利和亏损金额必须大于 0：profitAmount=" + profitAmount + ", lossAmount=" + lossAmount);
         }
 
-        // 必须先按照 SymbolRuleCache 修正实际开仓价格和数量，再根据修正后的参数计算 TP/SL。
         price = orderParameterCalculator.normalizeEntryPrice(symbol, price, Side.BUY.equals(side));
         quantity = orderParameterCalculator.normalizeLimitQuantity(symbol, quantity, price);
 
@@ -229,7 +220,9 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
     }
 
     @Override
-    public OrderInfo createLimitOrderAndTPSLForPercentage(String symbol, Side side, TimeInForce timeInForce, double quantity, double price, double profitPercentage, double lossPercentage) {
+    public OrderInfo createLimitOrderAndTPSLForPercentage(String symbol, Side side, TimeInForce timeInForce,
+                                                           double quantity, double price, double profitPercentage,
+                                                           double lossPercentage) {
         if (price <= 0) {
             throw new IllegalArgumentException("开仓价格必须大于 0：" + price);
         }
@@ -254,32 +247,6 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
                 symbol, profitPercentage, lossPercentage, tp, sl);
 
         return createLimitOrderAndTPSLForPrice(symbol, side, timeInForce, quantity, price, tp, sl);
-    }
-
-    private void createClosePositionAlgoOrder(String symbol, Side side, OrderType type, double triggerPrice, String name) {
-        NewAlgoOrderRequest request = new NewAlgoOrderRequest();
-        request.setAlgoType(algoType);
-        request.setSymbol(symbol);
-        request.setSide(side);
-        request.setType(type.name());
-        request.setTriggerPrice(triggerPrice);
-        request.setClosePosition(closePosition);
-        request.setNewOrderRespType(NewOrderRespType.RESULT);
-
-        ApiResponse<NewAlgoOrderResponse> response = api.newAlgoOrder(request);
-        if (response.getStatusCode() != 200 || response.getData() == null) {
-            throw new RuntimeException(name + " 止盈止损订单创建失败！symbol=" + symbol + ", triggerPrice=" + triggerPrice);
-        }
-
-        NewAlgoOrderResponse data = response.getData();
-        log.info("{} 保护单创建成功: symbol={}, algoId={}, type={}, side={}, triggerPrice={}, status={}",
-                name,
-                symbol,
-                data.getAlgoId(),
-                data.getOrderType(),
-                data.getSide(),
-                data.getTriggerPrice(),
-                data.getAlgoStatus());
     }
 
     @Override
@@ -357,20 +324,20 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
 
     private PositionInfo getPositionInfo(String symbol) {
         ApiResponse<PositionInformationV2Response> response = api.positionInformationV2(symbol, null);
-        PositionInformationV2ResponseInner v2Response = response.getData().getFirst();
+        PositionInformationV2ResponseInner data = response.getData().getFirst();
         return PositionInfo.builder()
-                .symbol(v2Response.getSymbol())
-                .positionAmt(Double.parseDouble(v2Response.getPositionAmt()))
-                .entryPrice(Double.parseDouble(v2Response.getEntryPrice()))
-                .breakEvenPrice(Double.parseDouble(v2Response.getBreakEvenPrice()))
-                .markPrice(Double.parseDouble(v2Response.getMarkPrice()))
-                .notional(Double.parseDouble(v2Response.getNotional()))
-                .unrealizedProfit(Double.parseDouble(v2Response.getUnRealizedProfit()))
-                .leverage(Integer.parseInt(v2Response.getLeverage()))
-                .marginType(v2Response.getMarginType())
-                .positionSide(v2Response.getPositionSide())
-                .liquidationPrice(Double.parseDouble(v2Response.getLiquidationPrice()))
-                .autoAddMargin(Boolean.parseBoolean(v2Response.getIsAutoAddMargin()))
+                .symbol(data.getSymbol())
+                .positionAmt(Double.parseDouble(data.getPositionAmt()))
+                .entryPrice(Double.parseDouble(data.getEntryPrice()))
+                .breakEvenPrice(Double.parseDouble(data.getBreakEvenPrice()))
+                .markPrice(Double.parseDouble(data.getMarkPrice()))
+                .notional(Double.parseDouble(data.getNotional()))
+                .unrealizedProfit(Double.parseDouble(data.getUnRealizedProfit()))
+                .leverage(Integer.parseInt(data.getLeverage()))
+                .marginType(data.getMarginType())
+                .positionSide(data.getPositionSide())
+                .liquidationPrice(Double.parseDouble(data.getLiquidationPrice()))
+                .autoAddMargin(Boolean.parseBoolean(data.getIsAutoAddMargin()))
                 .build();
     }
 
@@ -380,11 +347,9 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
 
     private OrderInfo newOrder(NewOrderRequest request, String message) {
         ApiResponse<NewOrderResponse> response = api.newOrder(request);
-        int statusCode = response.getStatusCode();
-        if (200 != statusCode || response.getData() == null) {
+        if (response.getStatusCode() != 200 || response.getData() == null) {
             throw new RuntimeException(message);
         }
-
         return toOrderInfo(response.getData());
     }
 
