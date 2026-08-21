@@ -4,8 +4,7 @@ import com.binance.connector.client.common.ApiResponse;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.api.UserDataStreamsApi;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.StartUserDataStreamResponse;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.lxf.bian_bot.config.BinanceProperties;
-import com.lxf.bian_bot.config.BinanceWebSocketProperties;
+import com.lxf.bian_bot.config.model.BinanceConfig;
 import com.lxf.bian_bot.model.AccountInfo;
 import com.lxf.bian_bot.model.OrderInfo;
 import com.lxf.bian_bot.model.PositionInfo;
@@ -29,8 +28,7 @@ public class BinanceUserDataStreamServiceImpl implements com.lxf.bian_bot.servic
     private static final long KEEPALIVE_INTERVAL_MILLIS = 30 * 60 * 1000L;
 
     private final UserDataStreamsApi userDataStreamsApi;
-    private final BinanceProperties binanceProperties;
-    private final BinanceWebSocketProperties webSocketProperties;
+    private final BinanceConfig binanceConfig;
     private final TradingState tradingState;
     private final BinanceUserDataStreamClient client;
 
@@ -43,18 +41,16 @@ public class BinanceUserDataStreamServiceImpl implements com.lxf.bian_bot.servic
     private volatile boolean started;
 
     public BinanceUserDataStreamServiceImpl(UserDataStreamsApi userDataStreamsApi,
-                                            BinanceProperties binanceProperties,
-                                            BinanceWebSocketProperties webSocketProperties,
+                                            BinanceConfig binanceConfig,
                                             TradingState tradingState) {
         this.userDataStreamsApi = userDataStreamsApi;
-        this.binanceProperties = binanceProperties;
-        this.webSocketProperties = webSocketProperties;
+        this.binanceConfig = binanceConfig;
         this.tradingState = tradingState;
         this.client = new BinanceUserDataStreamClient(
-                webSocketProperties.getWebSocketStreamsUrl(),
-                webSocketProperties.isProxyEnabled(),
-                webSocketProperties.getProxyHost(),
-                webSocketProperties.getProxyPort());
+                binanceConfig.getWebSocketStreamsUrl(),
+                binanceConfig.isProxyEnabled(),
+                binanceConfig.getProxyHost(),
+                binanceConfig.getProxyPort());
         this.client.setMessageListener(this::handleMessage);
         this.client.setErrorListener(error -> log.error("User Data Stream WebSocket 异常", error));
         this.client.setCloseListener(() -> {
