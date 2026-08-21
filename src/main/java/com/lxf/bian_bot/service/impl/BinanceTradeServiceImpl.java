@@ -2,19 +2,16 @@ package com.lxf.bian_bot.service.impl;
 
 import com.binance.connector.client.common.ApiResponse;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.api.DerivativesTradingUsdsFuturesRestApi;
-import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.AlgoType;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.ChangeInitialLeverageRequest;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.ChangeInitialLeverageResponse;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.ChangeMarginTypeRequest;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.ChangeMarginTypeResponse;
-import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.ClosePosition;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.MarginType;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.NewAlgoOrderRequest;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.NewAlgoOrderResponse;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.NewOrderRequest;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.NewOrderRespType;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.NewOrderResponse;
-import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.OrderType;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.PositionInformationV2Response;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.PositionInformationV2ResponseInner;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.Side;
@@ -22,6 +19,7 @@ import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.
 import com.lxf.bian_bot.model.ExchangeInfo;
 import com.lxf.bian_bot.model.LeverageInfo;
 import com.lxf.bian_bot.model.OrderInfo;
+import com.lxf.bian_bot.model.OrderType;
 import com.lxf.bian_bot.model.PositionInfo;
 import com.lxf.bian_bot.model.TimeInForce;
 import com.lxf.bian_bot.model.TradingMarginType;
@@ -36,6 +34,8 @@ import org.springframework.stereotype.Service;
 @Service
 public class BinanceTradeServiceImpl implements BinanceTradeService {
 
+    public static final String algoType = "CONDITIONAL";
+    public static final String closePosition = "true";
     private final DerivativesTradingUsdsFuturesRestApi api;
 
     public BinanceTradeServiceImpl(DerivativesTradingUsdsFuturesRestApi api) {
@@ -192,14 +192,14 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
         createClosePositionAlgoOrder(
                 symbol,
                 closeSide,
-                com.binance.connector.client.derivatives_trading_usds_futures.rest.model.OrderType.STOP_MARKET,
+                OrderType.STOP_MARKET,
                 sl,
                 "SL");
 
         createClosePositionAlgoOrder(
                 symbol,
                 closeSide,
-                com.binance.connector.client.derivatives_trading_usds_futures.rest.model.OrderType.TAKE_PROFIT_MARKET,
+                OrderType.TAKE_PROFIT_MARKET,
                 tp,
                 "TP");
 
@@ -211,17 +211,17 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
     private void createClosePositionAlgoOrder(
             String symbol,
             Side side,
-            com.binance.connector.client.derivatives_trading_usds_futures.rest.model.OrderType type,
+            OrderType type,
             double triggerPrice,
             String name) {
 
         NewAlgoOrderRequest request = new NewAlgoOrderRequest();
-        request.setAlgoType(AlgoType.CONDITIONAL);
+        request.setAlgoType(algoType);
         request.setSymbol(symbol);
         request.setSide(side);
-        request.setType(type);
+        request.setType(type.name());
         request.setTriggerPrice(triggerPrice);
-        request.setClosePosition(ClosePosition.TRUE);
+        request.setClosePosition(closePosition);
         request.setNewOrderRespType(NewOrderRespType.RESULT);
 
         ApiResponse<NewAlgoOrderResponse> response = api.newAlgoOrder(request);
@@ -353,7 +353,7 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
                 .avgPrice(parseDouble(data.getAvgPrice()))
                 .price(parseDouble(data.getPrice()))
                 .status(data.getStatus())
-                .reduceOnly(Boolean.parseBoolean(data.getReduceOnly()))
+                .reduceOnly(data.getReduceOnly())
                 .positionSide(data.getPositionSide())
                 .updateTime(data.getUpdateTime())
                 .build();
