@@ -24,9 +24,20 @@ public class OrderParameterCalculator {
         return calculateQuantity(symbol, usdtAmount, price, false);
     }
 
-    /**
-     * 将已有数量按照限价/保护单使用的 LOT_SIZE 规则修正。
-     */
+    public double normalizeMarketQuantity(String symbol, double quantity, double price) {
+        if (quantity <= 0) {
+            throw new IllegalArgumentException("下单数量必须大于 0：" + quantity);
+        }
+        if (price <= 0) {
+            throw new IllegalArgumentException("下单价格必须大于 0：" + price);
+        }
+
+        SymbolRule rule = getRule(symbol);
+        BigDecimal quantityValue = normalizeQuantityValue(rule, symbol, BigDecimal.valueOf(quantity), true);
+        validateNotional(rule, symbol, quantityValue, BigDecimal.valueOf(price));
+        return quantityValue.doubleValue();
+    }
+
     public double normalizeLimitQuantity(String symbol, double quantity, double price) {
         if (quantity <= 0) {
             throw new IllegalArgumentException("下单数量必须大于 0：" + quantity);
@@ -37,30 +48,18 @@ public class OrderParameterCalculator {
 
         SymbolRule rule = getRule(symbol);
         BigDecimal quantityValue = normalizeQuantityValue(rule, symbol, BigDecimal.valueOf(quantity), false);
-        BigDecimal priceValue = BigDecimal.valueOf(price);
-
-        validateNotional(rule, symbol, quantityValue, priceValue);
+        validateNotional(rule, symbol, quantityValue, BigDecimal.valueOf(price));
         return quantityValue.doubleValue();
     }
 
-    /**
-     * 按交易对价格规则修正普通价格，向下取整到 tickSize。
-     */
     public double normalizePrice(String symbol, double price) {
         return normalizePrice(symbol, price, RoundingMode.DOWN);
     }
 
-    /**
-     * BUY 开仓价格向下取整，SELL 开仓价格向上取整。
-     */
     public double normalizeEntryPrice(String symbol, double price, boolean buy) {
         return normalizePrice(symbol, price, buy ? RoundingMode.DOWN : RoundingMode.UP);
     }
 
-    /**
-     * TP/SL 按交易方向修正：
-     * BUY：TP 向上、SL 向下；SELL：TP 向下、SL 向上。
-     */
     public double normalizeTriggerPrice(String symbol, double price, Side entrySide, boolean takeProfit) {
         RoundingMode roundingMode;
         if (Side.BUY.equals(entrySide)) {
