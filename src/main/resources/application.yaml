@@ -11,42 +11,32 @@ logging:
 # ==================== 交易配置 ====================
 trading:
   # 是否允许交易信号真正发送订单
-  enabled: false
-
+  enabled: true
   # 每次开仓使用的 USDT 金额
   usdt-amount: 10
-
   # 下单模式：
   # LIMIT  = 限价单
   # MARKET = 市价单
-  order-type: LIMIT
-
+  order-type: MARKET
   # 限价单价格来源：
   # LATEST_PRICE = 使用当前最新价格
   limit-price-source: LATEST_PRICE
-
   # 是否启用止盈止损
   take-profit-stop-loss-enabled: true
-
   # 止盈金额，单位：USDT
-  take-profit-amount: 0.02
-
+  take-profit-amount: 0.01
   # 止损金额，单位：USDT
-  stop-loss-amount: 0.03
-
+  stop-loss-amount: 0.02
   # 保证金模式：
-  # ISOLATED = 逐仓
-  # CROSSED  = 全仓
-  margin-type: ISOLATED
-
+  # isolated = 逐仓
+  # cross  = 全仓
+  margin-type: cross
   # 是否使用交易对允许的最大杠杆
   # true  = 自动使用该交易对最大杠杆，下面的 leverage 配置失效
   # false = 使用下面 leverage 配置的杠杆
-  use-max-leverage: false
-
+  use-max-leverage: true
   # 目标杠杆
   # 当 use-max-leverage=true 时，此配置不生效
   leverage: 20
-
   # 下单前是否自动设置杠杆
   auto-set-leverage: true
