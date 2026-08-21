@@ -6,9 +6,9 @@ binance:
   web-socket-api-url: wss://ws-fapi.binance.com/ws-fapi/v1
   symbol: BTCUSDT,LABUSDT,BTWUSDT
   streams:
-    enabled: true
-    host: 127.0.0.1
-    port: 10090
+    proxy-enabled: true
+    proxy-host: 127.0.0.1
+    proxy-port: 10090
     web-socket-streams-url: wss://fstream.binance.com/stream
 
 # 每个币种只能配置一个策略
