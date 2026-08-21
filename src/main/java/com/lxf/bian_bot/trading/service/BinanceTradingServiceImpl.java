@@ -116,9 +116,9 @@ public class BinanceTradingServiceImpl implements BinanceTradingService {
      */
     private void ensureMarginType(String symbol) {
         TradingMarginType target = TradingMarginType.valueOf(tradingConfig.getMarginType().toUpperCase());
-        String current = tradeService.getMarginType(symbol);
+        String current = tradeService.getMarginType(symbol).toUpperCase();
 
-        if (target.name().equalsIgnoreCase(current)) {
+        if (target.name().contains(current)) {
             log.info("保证金模式已符合配置: symbol={}, marginType={}", symbol, current);
             return;
         }
