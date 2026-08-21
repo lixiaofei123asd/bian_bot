@@ -11,9 +11,9 @@ public class BinanceWebSocketStreamsConfiguration {
     public BinanceWebSocketStreamsClient binanceWebSocketStreamsClient(BinanceWebSocketProperties properties) {
         return new BinanceWebSocketStreamsClient(
                 properties.getWebSocketStreamsUrl(),
-                properties.isEnabled(),
-                properties.getHost(),
-                Integer.parseInt(properties.getPort())
+                properties.isProxyEnabled(),
+                properties.getProxyHost(),
+                properties.getProxyPort()
         );
     }
 }
