@@ -33,6 +33,40 @@ public class TradingState {
         if (positionInfo != null && positionInfo.getSymbol() != null) positions.put(positionInfo.getSymbol(), positionInfo);
     }
 
+    /**
+     * 根据成交事件增量修正持仓数量。
+     *
+     * <p>主要用于 reduceOnly 平仓成交。在 User Data Stream 的 ACCOUNT_UPDATE 尚未到达，
+     * 或某次事件没有及时刷新 TradingState 时，ORDER_TRADE_UPDATE 仍然可以保证本地状态及时归零。</p>
+     *
+     * @param symbol 交易对
+     * @param side 成交方向，BUY/SELL
+     * @param reduceOnly 是否只减仓
+     * @param lastFilledQty 本次成交数量（不是累计成交数量）
+     * @return 修正后的持仓；没有可修正的本地持仓时返回 null
+     */
+    public synchronized PositionInfo applyTradeToPosition(String symbol, String side,
+                                                            boolean reduceOnly, double lastFilledQty) {
+        if (!reduceOnly || symbol == null || symbol.isBlank() || lastFilledQty <= 0D) return null;
+
+        PositionInfo position = positions.get(symbol);
+        if (position == null || Double.compare(position.getPositionAmt(), 0D) == 0) return position;
+
+        double amount = position.getPositionAmt();
+        if ("BUY".equalsIgnoreCase(side)) {
+            amount += lastFilledQty;
+        } else if ("SELL".equalsIgnoreCase(side)) {
+            amount -= lastFilledQty;
+        } else {
+            return position;
+        }
+
+        if (Math.abs(amount) < 0.00000001D) amount = 0D;
+        position.setPositionAmt(amount);
+        positions.put(symbol, position);
+        return position;
+    }
+
     public void replaceOrders(List<OrderInfo> orderInfos) {
         orders.clear();
         if (orderInfos != null) orderInfos.forEach(this::updateOrder);
