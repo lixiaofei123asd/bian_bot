@@ -5,12 +5,11 @@ import com.binance.connector.client.common.ApiResponse;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.api.DerivativesTradingUsdsFuturesRestApi;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.NewAlgoOrderRequest;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.NewAlgoOrderResponse;
+import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.NewOrderRequest;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.NewOrderRespType;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.QueryOrderResponse;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.Side;
-import com.lxf.bian_bot.model.OrderInfo;
-import com.lxf.bian_bot.model.OrderType;
-import com.lxf.bian_bot.service.BinanceTradeService;
+import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.OrderType;
 import com.lxf.bian_bot.trading.order.OrderParameterCalculator;
 import com.lxf.bian_bot.trading.state.TradingState;
 import java.util.Map;
@@ -30,17 +29,14 @@ public class PendingOrderProtectionService {
     private static final long ENTRY_ORDER_TIMEOUT_MILLIS = 60_000L;
 
     private final DerivativesTradingUsdsFuturesRestApi api;
-    private final BinanceTradeService tradeService;
     private final OrderParameterCalculator orderParameterCalculator;
     private final TradingState tradingState;
     private final Map<Long, PendingProtection> pendingOrders = new ConcurrentHashMap<>();
 
     public PendingOrderProtectionService(DerivativesTradingUsdsFuturesRestApi api,
-                                         BinanceTradeService tradeService,
                                          OrderParameterCalculator orderParameterCalculator,
                                          TradingState tradingState) {
         this.api = api;
-        this.tradeService = tradeService;
         this.orderParameterCalculator = orderParameterCalculator;
         this.tradingState = tradingState;
     }
@@ -208,7 +204,7 @@ public class PendingOrderProtectionService {
             }
         } catch (ApiException e) {
             if (isImmediateTriggerException(e)) {
-                closeImmediatelyAfterProtectionTrigger(pending, side, tp, sl);
+                closeImmediatelyAfterProtectionTrigger(pending, side, quantity, tp, sl);
                 return;
             }
             throw e;
@@ -221,21 +217,44 @@ public class PendingOrderProtectionService {
 
     /**
      * TP/SL 创建时如果 Binance 判断订单会立即触发，则说明当前价格已经越过保护价格。
-     * 这种情况下不再继续创建保护单，直接市价平掉当前仓位。
+     * 这里直接使用当前类持有的 Binance API 创建 reduceOnly 市价平仓单，
+     * 不依赖 BinanceTradeService，避免形成循环依赖。
      */
     private void closeImmediatelyAfterProtectionTrigger(PendingProtection pending,
                                                          Side openSide,
+                                                         double quantity,
                                                          double tp,
                                                          double sl) {
         log.warn("当前价格已经越过止盈/止损价格，直接市价平仓: symbol={}, orderId={}, side={}, tp={}, sl={}",
                 pending.symbol, pending.orderId, openSide, tp, sl);
 
         try {
-            OrderInfo closeOrder = tradeService.closeMarketOrder(pending.symbol);
-            log.warn("已发送立即市价平仓: symbol={}, orderId={}, status={}",
-                    pending.symbol,
-                    pending.orderId,
-                    closeOrder == null ? null : closeOrder.getStatus());
+            Side closeSide = openSide == Side.BUY ? Side.SELL : Side.BUY;
+            quantity = orderParameterCalculator.normalizeMarketQuantity(pending.symbol, quantity, 0D);
+            if (quantity <= 0) {
+                log.error("立即市价平仓数量无效，保留保护任务继续处理: symbol={}, orderId={}, quantity={}",
+                        pending.symbol, pending.orderId, quantity);
+                return;
+            }
+
+            NewOrderRequest request = new NewOrderRequest();
+            request.setSymbol(pending.symbol);
+            request.setSide(closeSide);
+            request.setType(com.binance.connector.client.derivatives_trading_usds_futures.rest.model.OrderType.MARKET.name());
+            request.setQuantity(quantity);
+            request.setReduceOnly("true");
+            request.setNewOrderRespType(NewOrderRespType.RESULT);
+
+            ApiResponse<com.binance.connector.client.derivatives_trading_usds_futures.rest.model.NewOrderResponse> response = api.newOrder(request);
+            if (response.getStatusCode() != 200 || response.getData() == null) {
+                throw new RuntimeException("立即市价平仓失败！symbol=" + pending.symbol);
+            }
+
+            var closeOrder = response.getData();
+            log.warn("已发送立即市价平仓: symbol={}, orderId={}, closeOrderId={}, status={}, executedQty={}, avgPrice={}",
+                    pending.symbol, pending.orderId, closeOrder.getOrderId(), closeOrder.getStatus(),
+                    closeOrder.getExecutedQty(), closeOrder.getAvgPrice());
+
             pendingOrders.remove(pending.orderId);
             tradingState.removeOrder(pending.orderId);
             tradingState.refreshExecutionState(pending.symbol);
