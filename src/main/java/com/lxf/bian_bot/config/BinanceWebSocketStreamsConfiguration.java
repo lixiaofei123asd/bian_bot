@@ -8,12 +8,13 @@ import org.springframework.context.annotation.Configuration;
 public class BinanceWebSocketStreamsConfiguration {
 
     @Bean
-    public BinanceWebSocketStreamsClient binanceWebSocketStreamsClient(BinanceWebSocketProperties properties) {
+    public BinanceWebSocketStreamsClient binanceWebSocketStreamsClient(BinanceProperties properties) {
+        BinanceProperties.Streams streams = properties.getStreams();
         return new BinanceWebSocketStreamsClient(
-                properties.getWebSocketStreamsUrl(),
-                properties.isProxyEnabled(),
-                properties.getProxyHost(),
-                properties.getProxyPort()
+                streams.getWebSocketStreamsUrl(),
+                streams.isProxyEnabled(),
+                streams.getProxyHost(),
+                streams.getProxyPort()
         );
     }
 }
