@@ -1,5 +1,6 @@
 package com.lxf.bian_bot.trading.service;
 
+import com.binance.connector.client.common.ApiException;
 import com.binance.connector.client.common.ApiResponse;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.api.DerivativesTradingUsdsFuturesRestApi;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.NewAlgoOrderRequest;
@@ -7,7 +8,9 @@ import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.NewOrderRespType;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.QueryOrderResponse;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.Side;
+import com.lxf.bian_bot.model.OrderInfo;
 import com.lxf.bian_bot.model.OrderType;
+import com.lxf.bian_bot.service.BinanceTradeService;
 import com.lxf.bian_bot.trading.order.OrderParameterCalculator;
 import com.lxf.bian_bot.trading.state.TradingState;
 import java.util.Map;
@@ -23,17 +26,21 @@ public class PendingOrderProtectionService {
 
     private static final String ALGO_TYPE = "CONDITIONAL";
     private static final String CLOSE_POSITION = "true";
+    private static final String IMMEDIATE_TRIGGER_CODE = "-2021";
     private static final long ENTRY_ORDER_TIMEOUT_MILLIS = 60_000L;
 
     private final DerivativesTradingUsdsFuturesRestApi api;
+    private final BinanceTradeService tradeService;
     private final OrderParameterCalculator orderParameterCalculator;
     private final TradingState tradingState;
     private final Map<Long, PendingProtection> pendingOrders = new ConcurrentHashMap<>();
 
     public PendingOrderProtectionService(DerivativesTradingUsdsFuturesRestApi api,
+                                         BinanceTradeService tradeService,
                                          OrderParameterCalculator orderParameterCalculator,
                                          TradingState tradingState) {
         this.api = api;
+        this.tradeService = tradeService;
         this.orderParameterCalculator = orderParameterCalculator;
         this.tradingState = tradingState;
     }
@@ -108,7 +115,6 @@ public class PendingOrderProtectionService {
         createProtectionOrders(pending, executedQty, avgPrice);
         if (pending.slCreated && pending.tpCreated) {
             pendingOrders.remove(pending.orderId);
-            // 开仓单已经不再是“活动挂单”，由 User Data Stream 后续负责最终持仓状态。
             tradingState.removeOrder(pending.orderId);
             tradingState.refreshExecutionState(pending.symbol);
         }
@@ -193,16 +199,55 @@ public class PendingOrderProtectionService {
         log.info("止盈价格：{}", tp);
         log.info("止损价格：{}", sl);
 
-        if (!pending.slCreated) {
-            pending.slCreated = createClosePositionAlgoOrder(symbol, closeSide, OrderType.STOP_MARKET, sl, "SL");
-        }
-        if (!pending.tpCreated) {
-            pending.tpCreated = createClosePositionAlgoOrder(symbol, closeSide, OrderType.TAKE_PROFIT_MARKET, tp, "TP");
+        try {
+            if (!pending.slCreated) {
+                pending.slCreated = createClosePositionAlgoOrder(symbol, closeSide, OrderType.STOP_MARKET, sl, "SL");
+            }
+            if (!pending.tpCreated) {
+                pending.tpCreated = createClosePositionAlgoOrder(symbol, closeSide, OrderType.TAKE_PROFIT_MARKET, tp, "TP");
+            }
+        } catch (ApiException e) {
+            if (isImmediateTriggerException(e)) {
+                closeImmediatelyAfterProtectionTrigger(pending, side, tp, sl);
+                return;
+            }
+            throw e;
         }
 
         log.info("止盈止损保护状态: symbol={}, orderId={}, SL={}, TP={}",
                 symbol, pending.orderId, pending.slCreated, pending.tpCreated);
         log.info("============================================");
+    }
+
+    /**
+     * TP/SL 创建时如果 Binance 判断订单会立即触发，则说明当前价格已经越过保护价格。
+     * 这种情况下不再继续创建保护单，直接市价平掉当前仓位。
+     */
+    private void closeImmediatelyAfterProtectionTrigger(PendingProtection pending,
+                                                         Side openSide,
+                                                         double tp,
+                                                         double sl) {
+        log.warn("当前价格已经越过止盈/止损价格，直接市价平仓: symbol={}, orderId={}, side={}, tp={}, sl={}",
+                pending.symbol, pending.orderId, openSide, tp, sl);
+
+        try {
+            OrderInfo closeOrder = tradeService.closeMarketOrder(pending.symbol);
+            log.warn("已发送立即市价平仓: symbol={}, orderId={}, status={}",
+                    pending.symbol,
+                    pending.orderId,
+                    closeOrder == null ? null : closeOrder.getStatus());
+            pendingOrders.remove(pending.orderId);
+            tradingState.removeOrder(pending.orderId);
+            tradingState.refreshExecutionState(pending.symbol);
+        } catch (Exception closeException) {
+            log.error("立即市价平仓失败，保留保护任务继续处理: symbol={}, orderId={}",
+                    pending.symbol, pending.orderId, closeException);
+        }
+    }
+
+    private boolean isImmediateTriggerException(ApiException e) {
+        String message = e.getMessage();
+        return message != null && message.contains(IMMEDIATE_TRIGGER_CODE);
     }
 
     private boolean createClosePositionAlgoOrder(String symbol, Side side, OrderType type,
