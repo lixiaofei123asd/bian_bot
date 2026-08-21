@@ -184,18 +184,17 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
                 entryData.getExecutedQty(),
                 entryData.getAvgPrice());
 
-        if (!"FILLED".equalsIgnoreCase(entryData.getStatus())) {
-            log.info("限价开仓尚未成交，不提前创建止盈止损: symbol={}, orderId={}, status={}",
-                    symbol, entryData.getOrderId(), entryData.getStatus());
-            return entryOrder;
-        }
-
+        // Binance 的 TP/SL 是独立的 CONDITIONAL algo order。
+        // 限价开仓单处于 NEW 时也可以先提交 closePosition=true 的保护单，
+        // 这样与网页端“挂限价单的同时设置止盈止损”的使用方式一致。
+        // 保护单触发后只会平掉当前持仓，不需要提前知道实际持仓数量。
         Side closeSide = side == Side.BUY ? Side.SELL : Side.BUY;
 
         createClosePositionAlgoOrder(symbol, closeSide, OrderType.STOP_MARKET, sl, "SL");
         createClosePositionAlgoOrder(symbol, closeSide, OrderType.TAKE_PROFIT_MARKET, tp, "TP");
 
-        log.info("止盈止损设置完成: symbol={}, tp={}, sl={}", symbol, tp, sl);
+        log.info("止盈止损保护单已提交: symbol={}, entryOrderId={}, tp={}, sl={}, entryStatus={}",
+                symbol, entryData.getOrderId(), tp, sl, entryData.getStatus());
         log.info("=========================================");
         return entryOrder;
     }
@@ -209,6 +208,7 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
             throw new IllegalArgumentException("盈利和亏损金额必须大于 0：profitAmount=" + profitAmount + ", lossAmount=" + lossAmount);
         }
 
+        // 必须先按照 SymbolRuleCache 修正实际开仓价格和数量，再根据修正后的参数计算 TP/SL。
         price = orderParameterCalculator.normalizeEntryPrice(symbol, price, Side.BUY.equals(side));
         quantity = orderParameterCalculator.normalizeLimitQuantity(symbol, quantity, price);
 
@@ -222,8 +222,8 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
             sl = price + lossAmount / quantity;
         }
 
-        log.info("按照盈亏金额计算止盈止损: symbol={}, profitAmount={}, lossAmount={}, tp={}, sl={}",
-                symbol, profitAmount, lossAmount, tp, sl);
+        log.info("按照实际下单价格和数量计算止盈止损: symbol={}, price={}, quantity={}, profitAmount={}, lossAmount={}, tp={}, sl={}",
+                symbol, price, quantity, profitAmount, lossAmount, tp, sl);
 
         return createLimitOrderAndTPSLForPrice(symbol, side, timeInForce, quantity, price, tp, sl);
     }
