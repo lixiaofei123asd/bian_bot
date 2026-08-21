@@ -1,6 +1,6 @@
 binance:
   api-key: jQdVqqczpwmu6sH3S9IHzg64YqWEvDzN2gFt6Tfu8vV19Ac8PxeztfaybTNzziTC
-  secret-key: 2nfYo7yPoVjRHpwodST7cL2bp4uvuPqQVLzXqifMt0YtR5x
+  secret-key: 2nfYo7yPoVjRHpwGvWD6DMVasoKS7WpwodST7cL2bp4uvuPqQVLzXqifMt0YtR5x
   testnet: true
   base-url: https://fapi.binance.com
   web-socket-api-url: wss://ws-fapi.binance.com/ws-fapi/v1
