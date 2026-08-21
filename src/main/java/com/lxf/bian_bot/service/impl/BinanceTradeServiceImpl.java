@@ -56,8 +56,7 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
     @Override
     public String getMarginType(String symbol) {
         ApiResponse<PositionInformationV2Response> response = api.positionInformationV2(symbol, null);
-        PositionInformationV2Response data = response.getData();
-        return data.getFirst().getMarginType();
+        return response.getData().getFirst().getMarginType();
     }
 
     @Override
@@ -179,12 +178,17 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
         log.info("限价开仓订单已提交: orderId={}, status={}, executedQty={}, avgPrice={}",
                 entryData.getOrderId(), entryData.getStatus(), entryData.getExecutedQty(), entryData.getAvgPrice());
 
-        // TP/SL 使用 closePosition=true，只能在真正存在持仓后创建。
-        // 因此 NEW 状态的限价单只登记保护任务，不直接提交保护单。
-        pendingOrderProtectionService.register(symbol, entryData.getOrderId(), side, 0.02D, 0.03D);
+        double profitAmount = Side.BUY.equals(side)
+                ? (tp - price) * quantity
+                : (price - tp) * quantity;
+        double lossAmount = Side.BUY.equals(side)
+                ? (price - sl) * quantity
+                : (sl - price) * quantity;
 
-        log.info("限价开仓保护任务已等待成交: symbol={}, orderId={}, status={}",
-                symbol, entryData.getOrderId(), entryData.getStatus());
+        pendingOrderProtectionService.register(symbol, entryData.getOrderId(), side, profitAmount, lossAmount);
+
+        log.info("限价开仓保护任务已等待成交: symbol={}, orderId={}, status={}, profitAmount={}, lossAmount={}",
+                symbol, entryData.getOrderId(), entryData.getStatus(), profitAmount, lossAmount);
         log.info("=========================================");
         return entryOrder;
     }
