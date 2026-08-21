@@ -47,6 +47,10 @@ public class TradingState {
         orders.put(orderInfo.getOrderId(), orderInfo);
     }
 
+    public void removeOrder(long orderId) {
+        orders.remove(orderId);
+    }
+
     public PositionInfo getPosition(String symbol) {
         return positions.get(symbol);
     }
