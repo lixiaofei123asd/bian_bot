@@ -114,7 +114,7 @@ public class BinanceUserDataStreamServiceImpl implements com.lxf.bian_bot.servic
         long now = System.currentTimeMillis();
         if (now - lastKeepaliveTime >= KEEPALIVE_INTERVAL_MILLIS) {
             try {
-                userDataStreamsApi.keepaliveUserDataStream(listenKey);
+                userDataStreamsApi.keepaliveUserDataStream();
                 lastKeepaliveTime = now;
                 log.debug("Binance User Data Stream listenKey 续期成功");
             } catch (Exception e) {
@@ -366,7 +366,7 @@ public class BinanceUserDataStreamServiceImpl implements com.lxf.bian_bot.servic
         started = false;
         try {
             if (listenKey != null && !listenKey.isBlank()) {
-                userDataStreamsApi.closeUserDataStream(listenKey);
+                userDataStreamsApi.closeUserDataStream();
             }
         } catch (Exception e) {
             log.debug("关闭 Binance User Data Stream listenKey 异常", e);
