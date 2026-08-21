@@ -85,12 +85,12 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
 
     @Override
     public OrderInfo createMarketOrder(String symbol, Side side, double usdtAmount) {
-       ApiResponse<SymbolOrderBookTickerResponse> bookTicker = api.symbolOrderBookTicker(symbol);
-       SymbolOrderBookTickerResponse bookTickerData = bookTicker.getData();
-       double price = Side.BUY.equals(side)
-               ? Double.parseDouble(Objects.requireNonNull(bookTickerData.getSymbolOrderBookTickerResponse1().getAskPrice()))
-               : Double.parseDouble(Objects.requireNonNull(bookTickerData.getSymbolOrderBookTickerResponse1().getBidPrice()));
-       double quantity = orderParameterCalculator.calculateMarketQuantity(symbol, usdtAmount, price);
+        ApiResponse<SymbolOrderBookTickerResponse> bookTicker = api.symbolOrderBookTicker(symbol);
+        SymbolOrderBookTickerResponse bookTickerData = bookTicker.getData();
+        double price = Side.BUY.equals(side)
+                ? Double.parseDouble(Objects.requireNonNull(bookTickerData.getSymbolOrderBookTickerResponse1().getAskPrice()))
+                : Double.parseDouble(Objects.requireNonNull(bookTickerData.getSymbolOrderBookTickerResponse1().getBidPrice()));
+        double quantity = orderParameterCalculator.calculateMarketQuantity(symbol, usdtAmount, price);
 
         log.info("========== 市价下单 ==========");
         log.info("交易对：{}", symbol);
@@ -149,8 +149,8 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
 
         price = orderParameterCalculator.normalizeEntryPrice(symbol, price, Side.BUY.equals(side));
         quantity = orderParameterCalculator.normalizeLimitQuantity(symbol, quantity, price);
-        tp = orderParameterCalculator.normalizeTriggerPrice(symbol, tp);
-        sl = orderParameterCalculator.normalizeTriggerPrice(symbol, sl);
+        tp = orderParameterCalculator.normalizeTriggerPrice(symbol, tp, side, true);
+        sl = orderParameterCalculator.normalizeTriggerPrice(symbol, sl, side, false);
 
         NewOrderRequest entryRequest = new NewOrderRequest();
         entryRequest.type(OrderType.LIMIT.name());
@@ -282,6 +282,7 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
         double positionAmt = positionInfo.getPositionAmt();
         Side closeSide = positionAmt > 0 ? Side.SELL : Side.BUY;
         double quantity = Math.abs(positionAmt);
+        quantity = orderParameterCalculator.normalizeLimitQuantity(symbol, quantity, positionInfo.getMarkPrice());
 
         log.info("========== 市价平仓 ==========");
         log.info("交易对：{}", symbol);
@@ -347,3 +348,55 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
     public OrderInfo cancelOrder(String symbol, long orderId) {
         return null;
     }
+
+    private PositionInfo getPositionInfo(String symbol) {
+        ApiResponse<PositionInformationV2Response> response = api.positionInformationV2(symbol, null);
+        PositionInformationV2ResponseInner v2Response = response.getData().getFirst();
+        return PositionInfo.builder()
+                .symbol(v2Response.getSymbol())
+                .positionAmt(Double.parseDouble(v2Response.getPositionAmt()))
+                .entryPrice(Double.parseDouble(v2Response.getEntryPrice()))
+                .breakEvenPrice(Double.parseDouble(v2Response.getBreakEvenPrice()))
+                .markPrice(Double.parseDouble(v2Response.getMarkPrice()))
+                .notional(Double.parseDouble(v2Response.getNotional()))
+                .unrealizedProfit(Double.parseDouble(v2Response.getUnRealizedProfit()))
+                .leverage(Integer.parseInt(v2Response.getLeverage()))
+                .marginType(v2Response.getMarginType())
+                .positionSide(v2Response.getPositionSide())
+                .liquidationPrice(Double.parseDouble(v2Response.getLiquidationPrice()))
+                .autoAddMargin(Boolean.parseBoolean(v2Response.getIsAutoAddMargin()))
+                .build();
+    }
+
+    private double parseDouble(String value) {
+        return value == null || value.isBlank() ? 0D : Double.parseDouble(value);
+    }
+
+    private OrderInfo newOrder(NewOrderRequest request, String message) {
+        ApiResponse<NewOrderResponse> response = api.newOrder(request);
+        int statusCode = response.getStatusCode();
+        if (200 != statusCode || response.getData() == null) {
+            throw new RuntimeException(message);
+        }
+
+        return toOrderInfo(response.getData());
+    }
+
+    private OrderInfo toOrderInfo(NewOrderResponse data) {
+        return OrderInfo.builder()
+                .symbol(data.getSymbol())
+                .orderId(data.getOrderId())
+                .clientOrderId(data.getClientOrderId())
+                .side(data.getSide())
+                .type(data.getType())
+                .origQty(parseDouble(data.getOrigQty()))
+                .executedQty(parseDouble(data.getExecutedQty()))
+                .avgPrice(parseDouble(data.getAvgPrice()))
+                .price(parseDouble(data.getPrice()))
+                .status(data.getStatus())
+                .reduceOnly(data.getReduceOnly())
+                .positionSide(data.getPositionSide())
+                .updateTime(data.getUpdateTime())
+                .build();
+    }
+}
