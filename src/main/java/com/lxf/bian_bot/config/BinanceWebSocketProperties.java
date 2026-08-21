@@ -7,8 +7,23 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "binance.streams")
 public class BinanceWebSocketProperties {
 
-    private boolean enabled;
-    private String host;
-    private String port;
+    /**
+     * 是否使用代理。
+     */
+    private boolean proxyEnabled;
+
+    /**
+     * 代理主机。
+     */
+    private String proxyHost;
+
+    /**
+     * 代理端口。
+     */
+    private int proxyPort;
+
+    /**
+     * Binance WebSocket Streams 地址。
+     */
     private String webSocketStreamsUrl;
 }
