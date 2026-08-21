@@ -1,8 +1,8 @@
 package com.lxf.bian_bot.analysis.indicator;
 
 import com.lxf.bian_bot.analysis.Indicator;
+import com.lxf.bian_bot.analysis.enums.IndicatorSignal;
 import com.lxf.bian_bot.model.BinanceKline;
-import java.math.BigDecimal;
 import java.util.List;
 
 public class IndicatorKLine implements Indicator {
@@ -13,15 +13,21 @@ public class IndicatorKLine implements Indicator {
         return "KLINE";
     }
 
-    // 获取最新K线涨跌结果，1为上涨，-1为下跌，0为平盘
+    // 根据最新K线判断涨跌方向
     @Override
-    public BigDecimal calculate(List<BinanceKline> klines) {
+    public IndicatorSignal calculate(List<BinanceKline> klines) {
         if (klines == null || klines.isEmpty()) {
-            return null;
+            return IndicatorSignal.NEUTRAL;
         }
 
         BinanceKline kline = klines.get(klines.size() - 1);
         int result = kline.getClosePrice().compareTo(kline.getOpenPrice());
-        return BigDecimal.valueOf(result);
+        if (result > 0) {
+            return IndicatorSignal.UP;
+        }
+        if (result < 0) {
+            return IndicatorSignal.DOWN;
+        }
+        return IndicatorSignal.NEUTRAL;
     }
 }
