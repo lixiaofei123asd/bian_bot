@@ -81,7 +81,11 @@ public class BinanceUserDataStreamClient implements WebSocket.Listener {
         if (normalized.endsWith("/")) {
             normalized = normalized.substring(0, normalized.length() - 1);
         }
-        if (!normalized.endsWith("/ws")) {
+
+        // 市场 Streams 常用 /stream；Futures User Data Stream 使用 /ws/<listenKey>。
+        if (normalized.endsWith("/stream")) {
+            normalized = normalized.substring(0, normalized.length() - "/stream".length()) + "/ws";
+        } else if (!normalized.endsWith("/ws")) {
             normalized = normalized + "/ws";
         }
         return normalized + "/" + listenKey;
