@@ -9,6 +9,7 @@ import com.lxf.bian_bot.config.BinanceWebSocketProperties;
 import com.lxf.bian_bot.model.AccountInfo;
 import com.lxf.bian_bot.model.OrderInfo;
 import com.lxf.bian_bot.model.PositionInfo;
+import com.lxf.bian_bot.trading.state.TradingExecutionState;
 import com.lxf.bian_bot.trading.state.TradingState;
 import com.lxf.bian_bot.websocket.BinanceUserDataStreamClient;
 import jakarta.annotation.PostConstruct;
@@ -24,8 +25,7 @@ import org.springframework.stereotype.Service;
  * Binance Futures User Data Stream。
  *
  * <p>负责实时接收账户、持仓和订单成交事件，并将最新状态写入 TradingState。
- * User Data Stream 不提供主动账户快照接口，因此这里不通过 User Data Stream
- * 主动查询余额；运行期间以 Binance 推送事件作为实时状态来源。
+ * User Data Stream 不提供主动账户快照接口，因此运行期间以 Binance 推送事件作为实时状态来源。
  */
 @Slf4j
 @Service
@@ -244,6 +244,7 @@ public class BinanceUserDataStreamServiceImpl implements com.lxf.bian_bot.servic
                     .build();
 
             tradingState.updatePosition(position);
+            updateExecutionState(symbol);
             notifyListeners(positionListeners, position);
         }
     }
@@ -301,7 +302,26 @@ public class BinanceUserDataStreamServiceImpl implements com.lxf.bian_bot.servic
             tradingState.removeOrder(orderId);
         }
 
+        updateExecutionState(symbol);
         notifyListeners(orderListeners, order);
+    }
+
+    private void updateExecutionState(String symbol) {
+        PositionInfo position = tradingState.getPosition(symbol);
+        if (position != null && Double.compare(position.getPositionAmt(), 0D) != 0) {
+            tradingState.updateExecutionState(symbol, TradingExecutionState.POSITION_OPEN);
+            return;
+        }
+
+        List<OrderInfo> openOrders = tradingState.getOpenOrders(symbol);
+        if (!openOrders.isEmpty()) {
+            tradingState.updateExecutionState(symbol, TradingExecutionState.ORDER_OPEN);
+            return;
+        }
+
+        if (!tradingState.isOrderSubmitting(symbol)) {
+            tradingState.updateExecutionState(symbol, TradingExecutionState.READY);
+        }
     }
 
     private boolean isOpenStatus(String status) {
