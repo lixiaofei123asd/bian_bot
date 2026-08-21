@@ -24,17 +24,30 @@ public class OrderParameterCalculator {
         return calculateQuantity(symbol, usdtAmount, price, false);
     }
 
+    /**
+     * 按交易规则修正市价单数量。
+     *
+     * 市价单本身不提交 price，因此 price 可以为 0。
+     * 当调用方提供有效 price 时才校验最小名义价值；例如普通市价开仓可以传入当前价格，
+     * 而 reduceOnly 市价平仓通常不需要也无法提前知道实际成交价格，可以直接传 0。
+     */
     public double normalizeMarketQuantity(String symbol, double quantity, double price) {
         if (quantity <= 0) {
             throw new IllegalArgumentException("下单数量必须大于 0：" + quantity);
         }
-        if (price <= 0) {
-            throw new IllegalArgumentException("下单价格必须大于 0：" + price);
+        if (price < 0) {
+            throw new IllegalArgumentException("下单价格不能小于 0：" + price);
         }
 
         SymbolRule rule = getRule(symbol);
-        BigDecimal quantityValue = normalizeQuantityValue(rule, symbol, BigDecimal.valueOf(quantity), true);
-        validateNotional(rule, symbol, quantityValue, BigDecimal.valueOf(price));
+        BigDecimal quantityValue = normalizeQuantityValue(
+                rule, symbol, BigDecimal.valueOf(quantity), true);
+
+        // 市价平仓没有实际下单价格，price=0 时不能做名义价值校验。
+        if (price > 0) {
+            validateNotional(rule, symbol, quantityValue, BigDecimal.valueOf(price));
+        }
+
         return quantityValue.doubleValue();
     }
 
