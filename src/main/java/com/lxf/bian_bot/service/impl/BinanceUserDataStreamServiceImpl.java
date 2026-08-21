@@ -56,9 +56,9 @@ public class BinanceUserDataStreamServiceImpl implements com.lxf.bian_bot.servic
         this.tradingState = tradingState;
         this.client = new BinanceUserDataStreamClient(
                 webSocketProperties.getWebSocketStreamsUrl(),
-                webSocketProperties.isEnabled(),
-                webSocketProperties.getHost(),
-                Integer.parseInt(webSocketProperties.getPort())
+                webSocketProperties.isProxyEnabled(),
+                webSocketProperties.getProxyHost(),
+                webSocketProperties.getProxyPort()
         );
         this.client.setMessageListener(this::handleMessage);
         this.client.setErrorListener(error -> log.error("User Data Stream WebSocket 异常", error));
@@ -72,10 +72,6 @@ public class BinanceUserDataStreamServiceImpl implements com.lxf.bian_bot.servic
     @PostConstruct
     @Override
     public void start() {
-        if (!webSocketProperties.isEnabled()) {
-            log.info("Binance User Data Stream 未启用");
-            return;
-        }
         if (started) {
             return;
         }
@@ -100,7 +96,6 @@ public class BinanceUserDataStreamServiceImpl implements com.lxf.bian_bot.servic
             log.info("Binance Futures User Data Stream 启动成功");
         } catch (Exception e) {
             log.error("启动 Binance Futures User Data Stream 失败", e);
-            // 由定时任务负责后续重试，避免启动阶段无限阻塞 Spring。
         }
     }
 
@@ -109,7 +104,7 @@ public class BinanceUserDataStreamServiceImpl implements com.lxf.bian_bot.servic
      */
     @Scheduled(fixedDelay = 60_000L)
     public void maintainStream() {
-        if (!started || !webSocketProperties.isEnabled()) {
+        if (!started) {
             return;
         }
 
