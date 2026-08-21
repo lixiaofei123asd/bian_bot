@@ -2,10 +2,12 @@ package com.lxf.bian_bot.service.impl;
 
 import com.binance.connector.client.common.ApiResponse;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.api.DerivativesTradingUsdsFuturesRestApi;
+import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.AllOrdersResponseInner;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.ChangeInitialLeverageRequest;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.ChangeInitialLeverageResponse;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.ChangeMarginTypeRequest;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.ChangeMarginTypeResponse;
+import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.CurrentAllOpenOrdersResponse;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.MarginType;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.NewAlgoOrderRequest;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.NewAlgoOrderResponse;
@@ -24,7 +26,8 @@ import com.lxf.bian_bot.model.PositionInfo;
 import com.lxf.bian_bot.model.TimeInForce;
 import com.lxf.bian_bot.model.TradingMarginType;
 import com.lxf.bian_bot.service.BinanceTradeService;
-import java.text.DecimalFormat;
+import com.lxf.bian_bot.trading.order.OrderParameterCalculator;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import lombok.extern.slf4j.Slf4j;
@@ -37,9 +40,11 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
     public static final String algoType = "CONDITIONAL";
     public static final String closePosition = "true";
     private final DerivativesTradingUsdsFuturesRestApi api;
+    private final OrderParameterCalculator orderParameterCalculator;
 
-    public BinanceTradeServiceImpl(DerivativesTradingUsdsFuturesRestApi api) {
+    public BinanceTradeServiceImpl(DerivativesTradingUsdsFuturesRestApi api, OrderParameterCalculator orderParameterCalculator) {
         this.api = api;
+        this.orderParameterCalculator = orderParameterCalculator;
     }
 
     @Override
@@ -81,10 +86,22 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
     @Override
     public OrderInfo createMarketOrder(String symbol, Side side, double usdtAmount) {
         double quantity = calculateQuantity(symbol, side, usdtAmount);
+        ApiResponse<SymbolOrderBookTickerResponse> bookTicker = api.symbolOrderBookTicker(symbol);
+        SymbolOrderBookTickerResponse bookTickerData = bookTicker.getData();
+        double price = Side.BUY.equals(side)
+                ? Double.parseDouble(Objects.requireNonNull(bookTickerData.getSymbolOrderBookTickerResponse1().getAskPrice()))
+                : Double.parseDouble(Objects.requireNonNull(bookTickerData.getSymbolOrderBookTickerResponse1().getBidPrice()));
+        double quantity = orderParameterCalculator.calculateMarketQuantity(symbol, usdtAmount, price);
+
         log.info("========== 市价下单 ==========");
         log.info("交易对：{}", symbol);
         log.info("方向：{}", side);
         log.info("USDT金额：{}", usdtAmount);
+        log.info("实际数量：{}", quantity);
+        log.info("交易对：{}", symbol);
+        log.info("方向：{}", side);
+        log.info("USDT金额：{}", usdtAmount);
+        log.info("盘口价格：{}", price);
         log.info("实际数量：{}", quantity);
         log.info("==============================");
 
@@ -93,7 +110,6 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
         request.symbol(symbol);
         request.side(side);
         request.setQuantity(quantity);
-        request.setNewOrderRespType(NewOrderRespType.RESULT);
 
         return newOrder(request, "下单失败！");
     }
@@ -101,6 +117,7 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
     @Override
     public OrderInfo createLimitOrder(String symbol, Side side, TimeInForce timeInForce, double usdtAmount, double price) {
         double quantity = calculateQuantity(symbol, side, usdtAmount);
+        double quantity = orderParameterCalculator.calculateLimitQuantity(symbol, usdtAmount, price);
         log.info("========== 限价下单 ==========");
         log.info("交易对：{}", symbol);
         log.info("方向：{}", side);
@@ -117,6 +134,7 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
         com.binance.connector.client.derivatives_trading_usds_futures.rest.model.TimeInForce binanceTimeInForce =
                 com.binance.connector.client.derivatives_trading_usds_futures.rest.model.TimeInForce.valueOf(timeInForce.name());
         request.setTimeInForce(binanceTimeInForce);
+        request.setTimeInForce(com.binance.connector.client.derivatives_trading_usds_futures.rest.model.TimeInForce.valueOf(timeInForce.name()));
         request.setQuantity(quantity);
         request.setPrice(price);
         request.setNewOrderRespType(NewOrderRespType.RESULT);
@@ -264,16 +282,7 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
     public OrderInfo closeMarketOrder(String symbol) {
         PositionInfo positionInfo = this.getPositionInfo(symbol);
         double positionAmt = positionInfo.getPositionAmt();
-        Side closeSide;
-        String sideStr = "";
-        if (positionAmt > 0) {
-            closeSide = Side.SELL;
-            sideStr = "平多";
-        } else {
-            closeSide = Side.BUY;
-            sideStr = "平空";
-        }
-
+        Side closeSide = positionAmt > 0 ? Side.SELL : Side.BUY;
         double quantity = Math.abs(positionAmt);
 
         log.info("========== 市价平仓 ==========");
@@ -287,7 +296,9 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
         request.setSide(closeSide);
         request.setType(OrderType.MARKET.name());
         request.setQuantity(quantity);
+        // 关键：只允许减少仓位
         request.setReduceOnly("true");
+        // 返回完整订单结果
         request.setNewOrderRespType(NewOrderRespType.RESULT);
         return newOrder(request, "市价平仓失败！");
     }
@@ -295,6 +306,50 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
     @Override
     public PositionInfo getPosition(String symbol) {
         return getPositionInfo(symbol);
+    }
+
+    @Override
+    public List<PositionInfo> getAllPositions() {
+        return List.of();
+    }
+
+    @Override
+    public List<OrderInfo> getOpenOrders(String symbol) {
+        ApiResponse<CurrentAllOpenOrdersResponse> response = api.currentAllOpenOrders(symbol, null);
+        CurrentAllOpenOrdersResponse data = response.getData();
+        List<OrderInfo> orders = new ArrayList<>();
+        if (data == null) {
+            return orders;
+        }
+
+        for (AllOrdersResponseInner order : data) {
+            orders.add(OrderInfo.builder()
+                    .symbol(order.getSymbol())
+                    .orderId(order.getOrderId() == null ? 0L : order.getOrderId())
+                    .clientOrderId(order.getClientOrderId())
+                    .side(order.getSide())
+                    .type(order.getType())
+                    .origQty(parseDouble(order.getOrigQty()))
+                    .executedQty(parseDouble(order.getExecutedQty()))
+                    .avgPrice(parseDouble(order.getAvgPrice()))
+                    .price(parseDouble(order.getPrice()))
+                    .status(order.getStatus())
+                    .reduceOnly(Boolean.TRUE.equals(order.getReduceOnly()))
+                    .positionSide(order.getPositionSide())
+                    .updateTime(order.getUpdateTime() == null ? 0L : order.getUpdateTime())
+                    .build());
+        }
+        return orders;
+    }
+
+    @Override
+    public OrderInfo getOrder(String symbol, long orderId) {
+        return null;
+    }
+
+    @Override
+    public OrderInfo cancelOrder(String symbol, long orderId) {
+        return null;
     }
 
     private PositionInfo getPositionInfo(String symbol) {
@@ -316,6 +371,9 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
                 .build();
     }
 
+    private double parseDouble(String value) {
+        return value == null || value.isBlank() ? 0D : Double.parseDouble(value);
+    }
     @Override
     public List<PositionInfo> getAllPositions() {
         return List.of();
@@ -349,7 +407,6 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
         double quantity = usdtAmount / price;
         DecimalFormat df = new DecimalFormat("#.#");
         return Double.parseDouble(df.format(quantity));
-    }
 
     private OrderInfo newOrder(NewOrderRequest request, String message) {
         ApiResponse<NewOrderResponse> response = api.newOrder(request);
