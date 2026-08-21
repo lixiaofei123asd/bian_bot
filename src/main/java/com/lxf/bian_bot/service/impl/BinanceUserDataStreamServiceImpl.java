@@ -54,26 +54,20 @@ public class BinanceUserDataStreamServiceImpl implements com.lxf.bian_bot.servic
         this.client.setMessageListener(this::handleMessage);
         this.client.setErrorListener(error -> log.error("User Data Stream WebSocket 异常", error));
         this.client.setCloseListener(() -> {
-            if (started) {
-                log.warn("User Data Stream WebSocket 已关闭，等待自动重连");
-            }
+            if (started) log.warn("User Data Stream WebSocket 已关闭，等待自动重连");
         });
     }
 
     @PostConstruct
     @Override
     public void start() {
-        if (started) {
-            return;
-        }
+        if (started) return;
         started = true;
         startStream();
     }
 
     private synchronized void startStream() {
-        if (!started) {
-            return;
-        }
+        if (!started) return;
         try {
             ApiResponse<StartUserDataStreamResponse> response = userDataStreamsApi.startUserDataStream();
             StartUserDataStreamResponse data = response.getData();
@@ -91,9 +85,7 @@ public class BinanceUserDataStreamServiceImpl implements com.lxf.bian_bot.servic
 
     @Scheduled(fixedDelay = 60_000L)
     public void maintainStream() {
-        if (!started) {
-            return;
-        }
+        if (!started) return;
         if (listenKey == null || listenKey.isBlank()) {
             startStream();
             return;
@@ -180,9 +172,7 @@ public class BinanceUserDataStreamServiceImpl implements com.lxf.bian_bot.servic
             }
         }
         if (positions != null && positions.isArray()) {
-            for (JsonNode position : positions) {
-                unrealizedProfit += number(position, "up", 0D);
-            }
+            for (JsonNode position : positions) unrealizedProfit += number(position, "up", 0D);
         }
 
         AccountInfo accountInfo = AccountInfo.builder()
@@ -198,15 +188,11 @@ public class BinanceUserDataStreamServiceImpl implements com.lxf.bian_bot.servic
     }
 
     private void updatePositions(JsonNode positions) {
-        if (positions == null || !positions.isArray()) {
-            return;
-        }
+        if (positions == null || !positions.isArray()) return;
 
         for (JsonNode node : positions) {
             String symbol = text(node, "s");
-            if (symbol == null || symbol.isBlank()) {
-                continue;
-            }
+            if (symbol == null || symbol.isBlank()) continue;
 
             PositionInfo oldPosition = tradingState.getPosition(symbol);
             double oldAmount = oldPosition == null ? 0D : oldPosition.getPositionAmt();
@@ -225,8 +211,6 @@ public class BinanceUserDataStreamServiceImpl implements com.lxf.bian_bot.servic
             double newAmount = position.getPositionAmt();
             tradingState.updatePosition(position);
 
-            // 只有“原来有持仓 -> 现在持仓归零”才清理该币种残留订单。
-            // 这样不会误删“当前无持仓但正在等待成交的全新开仓挂单”。
             if (Double.compare(oldAmount, 0D) != 0 && Double.compare(newAmount, 0D) == 0) {
                 int removed = tradingState.clearSymbolOrders(symbol);
                 tradingState.updateExecutionState(symbol, TradingExecutionState.READY);
@@ -242,18 +226,18 @@ public class BinanceUserDataStreamServiceImpl implements com.lxf.bian_bot.servic
 
     private void handleOrderTradeUpdate(JsonNode root) {
         JsonNode orderNode = root.path("o");
-        if (orderNode.isMissingNode()) {
-            return;
-        }
+        if (orderNode.isMissingNode()) return;
 
         String symbol = text(orderNode, "s");
         long orderId = orderNode.path("i").asLong(0L);
-        if (symbol == null || orderId == 0L) {
-            return;
-        }
+        if (symbol == null || orderId == 0L) return;
 
         String status = text(orderNode, "X");
         String executionType = text(orderNode, "x");
+
+        if ("TRADE".equals(executionType)) {
+            tradingState.addTodayRealizedPnl(number(orderNode, "rp", 0D));
+        }
 
         log.info("========== Binance User Data ORDER_TRADE_UPDATE ==========");
         log.info("订单更新: symbol={}, orderId={}, clientOrderId={}, side={}, type={}, status={}, execType={}, orderQty={}, orderPrice={}, avgPrice={}, lastFilledQty={}, lastFilledPrice={}",
@@ -278,30 +262,20 @@ public class BinanceUserDataStreamServiceImpl implements com.lxf.bian_bot.servic
                 .updateTime(orderNode.path("T").asLong(System.currentTimeMillis()))
                 .build();
 
-        if (isOpenStatus(status)) {
-            tradingState.updateOrder(order);
-        } else {
-            tradingState.removeOrder(orderId);
-        }
+        if (isOpenStatus(status)) tradingState.updateOrder(order);
+        else tradingState.removeOrder(orderId);
 
         tradingState.refreshExecutionState(symbol);
         notifyListeners(orderListeners, order);
     }
 
-    private boolean isOpenStatus(String status) {
-        return "NEW".equals(status) || "PARTIALLY_FILLED".equals(status);
-    }
+    private boolean isOpenStatus(String status) { return "NEW".equals(status) || "PARTIALLY_FILLED".equals(status); }
 
     private double number(JsonNode node, String field, double defaultValue) {
         JsonNode value = node.get(field);
-        if (value == null || value.isNull()) {
-            return defaultValue;
-        }
-        try {
-            return Double.parseDouble(value.asText());
-        } catch (Exception e) {
-            return defaultValue;
-        }
+        if (value == null || value.isNull()) return defaultValue;
+        try { return Double.parseDouble(value.asText()); }
+        catch (Exception e) { return defaultValue; }
     }
 
     private String text(JsonNode node, String field) {
@@ -311,47 +285,28 @@ public class BinanceUserDataStreamServiceImpl implements com.lxf.bian_bot.servic
 
     private <T> void notifyListeners(List<Consumer<T>> listeners, T value) {
         for (Consumer<T> listener : listeners) {
-            try {
-                listener.accept(value);
-            } catch (Exception e) {
-                log.error("User Data Stream listener 执行异常", e);
-            }
+            try { listener.accept(value); }
+            catch (Exception e) { log.error("User Data Stream listener 执行异常", e); }
         }
     }
 
     @Override
-    public void addOrderListener(Consumer<OrderInfo> listener) {
-        if (listener != null) {
-            orderListeners.add(listener);
-        }
-    }
+    public void addOrderListener(Consumer<OrderInfo> listener) { if (listener != null) orderListeners.add(listener); }
 
     @Override
-    public void addPositionListener(Consumer<PositionInfo> listener) {
-        if (listener != null) {
-            positionListeners.add(listener);
-        }
-    }
+    public void addPositionListener(Consumer<PositionInfo> listener) { if (listener != null) positionListeners.add(listener); }
 
-    public void addAccountListener(Consumer<AccountInfo> listener) {
-        if (listener != null) {
-            accountListeners.add(listener);
-        }
-    }
+    public void addAccountListener(Consumer<AccountInfo> listener) { if (listener != null) accountListeners.add(listener); }
 
     @Override
-    public boolean isConnected() {
-        return client.isConnected();
-    }
+    public boolean isConnected() { return client.isConnected(); }
 
     @PreDestroy
     @Override
     public synchronized void stop() {
         started = false;
         try {
-            if (listenKey != null && !listenKey.isBlank()) {
-                userDataStreamsApi.closeUserDataStream();
-            }
+            if (listenKey != null && !listenKey.isBlank()) userDataStreamsApi.closeUserDataStream();
         } catch (Exception e) {
             log.debug("关闭 Binance User Data Stream listenKey 异常", e);
         } finally {
