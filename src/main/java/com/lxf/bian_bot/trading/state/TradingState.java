@@ -9,6 +9,12 @@ import java.util.concurrent.ConcurrentHashMap;
 import lombok.Getter;
 import org.springframework.stereotype.Component;
 
+/**
+ * 全局交易状态中心。
+ *
+ * <p>Spring 默认单例 Bean，整个应用内所有 Service 注入到的都是同一个 TradingState 实例。
+ * REST 负责初始化，User Data Stream 和交易服务负责实时更新，业务层只从这里读取当前状态。
+ */
 @Getter
 @Component
 public class TradingState {
@@ -20,7 +26,9 @@ public class TradingState {
     private final Map<String, TradingExecutionState> executionStates = new ConcurrentHashMap<>();
 
     public void updateAccount(AccountInfo accountInfo) {
-        this.accountInfo = accountInfo;
+        if (accountInfo != null) {
+            this.accountInfo = accountInfo;
+        }
     }
 
     public void updatePosition(PositionInfo positionInfo) {
@@ -51,13 +59,33 @@ public class TradingState {
         orders.remove(orderId);
     }
 
+    /**
+     * 清理指定交易对在内存中的活动订单状态。
+     *
+     * <p>主要用于 User Data Stream 确认持仓从非零变为零后的状态收敛，
+     * 防止已经完成的开仓/保护生命周期残留在 TradingState 中阻塞下一次交易。
+     */
+    public int clearSymbolOrders(String symbol) {
+        if (symbol == null || symbol.isBlank()) {
+            return 0;
+        }
+        int removed = 0;
+        for (Map.Entry<Long, OrderInfo> entry : orders.entrySet()) {
+            OrderInfo order = entry.getValue();
+            if (order != null && symbol.equals(order.getSymbol()) && orders.remove(entry.getKey(), order)) {
+                removed++;
+            }
+        }
+        return removed;
+    }
+
     public PositionInfo getPosition(String symbol) {
         return positions.get(symbol);
     }
 
     public List<OrderInfo> getOpenOrders(String symbol) {
         return orders.values().stream()
-                .filter(order -> symbol.equals(order.getSymbol()))
+                .filter(order -> order != null && symbol.equals(order.getSymbol()))
                 .toList();
     }
 
@@ -80,6 +108,30 @@ public class TradingState {
     public void updateExecutionState(String symbol, TradingExecutionState state) {
         if (symbol != null && state != null) {
             executionStates.put(symbol, state);
+        }
+    }
+
+    /**
+     * 根据当前持仓和活动订单重新计算指定交易对的执行状态。
+     */
+    public void refreshExecutionState(String symbol) {
+        if (symbol == null || symbol.isBlank()) {
+            return;
+        }
+
+        PositionInfo position = positions.get(symbol);
+        if (position != null && Double.compare(position.getPositionAmt(), 0D) != 0) {
+            executionStates.put(symbol, TradingExecutionState.POSITION_OPEN);
+            return;
+        }
+
+        if (!getOpenOrders(symbol).isEmpty()) {
+            executionStates.put(symbol, TradingExecutionState.ORDER_OPEN);
+            return;
+        }
+
+        if (!isOrderSubmitting(symbol)) {
+            executionStates.put(symbol, TradingExecutionState.READY);
         }
     }
 }
