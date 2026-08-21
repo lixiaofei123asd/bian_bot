@@ -9,45 +9,33 @@ import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.Side;
 import com.lxf.bian_bot.model.OrderType;
 import com.lxf.bian_bot.trading.order.OrderParameterCalculator;
+import com.lxf.bian_bot.trading.state.TradingState;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
-/**
- * 监控限价开仓单，并在第一次产生成交后创建官方 Futures API 支持的 TP/SL 保护单。
- *
- * <p>这里不调用 Binance 网页的私有 OTOCO BAPI，而是用公开 Futures API 模拟 OTOCO 的核心行为：
- * <p>1. 开仓单 NEW 时不创建保护单；
- * <p>2. PARTIALLY_FILLED 或 FILLED 时立即创建保护单；
- * <p>3. 保护单使用 closePosition=true，因此后续继续成交的仓位也由同一组保护单覆盖；
- * <p>4. 如果 TP/SL 中一个创建失败，下一次检查只重试失败的那一个；
- * <p>5. 开仓单超过配置的挂单时效仍未产生任何成交，则取消剩余限价单。
- */
+/** 监控限价开仓单，并在产生成交后创建 TP/SL 保护单。 */
 @Slf4j
 @Service
 public class PendingOrderProtectionService {
 
     private static final String ALGO_TYPE = "CONDITIONAL";
     private static final String CLOSE_POSITION = "true";
-
-    /**
-     * 限价开仓最大等待时间，单位毫秒。
-     *
-     * <p>当前按需求固定为 60 秒；后续如果需要做成 application.yml 配置，
-     * 可以再接入 TradingConfig，不改变这里的状态机逻辑。
-     */
     private static final long ENTRY_ORDER_TIMEOUT_MILLIS = 60_000L;
 
     private final DerivativesTradingUsdsFuturesRestApi api;
     private final OrderParameterCalculator orderParameterCalculator;
+    private final TradingState tradingState;
     private final Map<Long, PendingProtection> pendingOrders = new ConcurrentHashMap<>();
 
     public PendingOrderProtectionService(DerivativesTradingUsdsFuturesRestApi api,
-                                         OrderParameterCalculator orderParameterCalculator) {
+                                         OrderParameterCalculator orderParameterCalculator,
+                                         TradingState tradingState) {
         this.api = api;
         this.orderParameterCalculator = orderParameterCalculator;
+        this.tradingState = tradingState;
     }
 
     public void register(String symbol, long orderId, Side side, double profitAmount, double lossAmount) {
@@ -62,7 +50,6 @@ public class PendingOrderProtectionService {
         if (pendingOrders.isEmpty()) {
             return;
         }
-
         for (PendingProtection pending : pendingOrders.values()) {
             try {
                 process(pending);
@@ -73,8 +60,7 @@ public class PendingOrderProtectionService {
     }
 
     private void process(PendingProtection pending) {
-        ApiResponse<QueryOrderResponse> response = api.queryOrder(
-                pending.symbol, pending.orderId, null, null);
+        ApiResponse<QueryOrderResponse> response = api.queryOrder(pending.symbol, pending.orderId, null, null);
         QueryOrderResponse order = response.getData();
         if (order == null || order.getStatus() == null) {
             return;
@@ -83,28 +69,25 @@ public class PendingOrderProtectionService {
         String status = order.getStatus();
         double executedQty = parseDouble(order.getExecutedQty());
 
-        // 已经有成交：优先处理成交保护，不能因为超过60秒而取消已经形成的仓位。
         if (executedQty > 0) {
-            if ("PARTIALLY_FILLED".equals(status)
-                    || "FILLED".equals(status)
-                    || "CANCELED".equals(status)
-                    || "EXPIRED".equals(status)
+            if ("PARTIALLY_FILLED".equals(status) || "FILLED".equals(status)
+                    || "CANCELED".equals(status) || "EXPIRED".equals(status)
                     || "EXPIRED_IN_MATCH".equals(status)) {
                 handleFilledQuantity(pending, order, status, executedQty);
             }
             return;
         }
 
-        // 没有任何成交且已经进入终态，保护任务直接结束。
         if ("CANCELED".equals(status) || "EXPIRED".equals(status)
                 || "EXPIRED_IN_MATCH".equals(status) || "REJECTED".equals(status)) {
             pendingOrders.remove(pending.orderId);
+            tradingState.removeOrder(pending.orderId);
+            tradingState.refreshExecutionState(pending.symbol);
             log.info("限价开仓未产生成交，结束保护任务: symbol={}, orderId={}, status={}",
                     pending.symbol, pending.orderId, status);
             return;
         }
 
-        // 仍然是 NEW：检查是否已经超过最大挂单时间。
         if ("NEW".equals(status) && System.currentTimeMillis() - pending.registerTime >= ENTRY_ORDER_TIMEOUT_MILLIS) {
             cancelExpiredEntryOrder(pending);
         }
@@ -122,37 +105,27 @@ public class PendingOrderProtectionService {
             return;
         }
 
-        // 关键：PARTIALLY_FILLED 就已经有持仓，可以开始保护，不必等 FILLED。
         createProtectionOrders(pending, executedQty, avgPrice);
-
         if (pending.slCreated && pending.tpCreated) {
             pendingOrders.remove(pending.orderId);
+            // 开仓单已经不再是“活动挂单”，由 User Data Stream 后续负责最终持仓状态。
+            tradingState.removeOrder(pending.orderId);
+            tradingState.refreshExecutionState(pending.symbol);
         }
     }
 
-    /**
-     * 取消超过60秒仍完全没有成交的限价开仓单。
-     *
-     * <p>取消请求后再次查询最终状态，避免刚好在60秒边界发生成交时误认为没有成交。
-     * 如果发现竞态下已经产生了成交，则立即按实际成交数量创建保护单，而不是丢弃仓位。
-     */
     private void cancelExpiredEntryOrder(PendingProtection pending) {
         log.info("限价开仓超过{}秒仍未成交，准备取消: symbol={}, orderId={}",
                 ENTRY_ORDER_TIMEOUT_MILLIS / 1000, pending.symbol, pending.orderId);
-
         try {
             api.cancelOrder(pending.symbol, pending.orderId, null, null);
             log.info("限价开仓取消请求已发送: symbol={}, orderId={}", pending.symbol, pending.orderId);
         } catch (Exception e) {
-            // 取消失败时不删除任务，下一秒继续查询并重试，避免挂单遗留。
-            log.error("限价开仓取消失败，下一次检查继续处理: symbol={}, orderId={}",
-                    pending.symbol, pending.orderId, e);
+            log.error("限价开仓取消失败，下一次检查继续处理: symbol={}, orderId={}", pending.symbol, pending.orderId, e);
             return;
         }
 
-        // 取消成功后重新查询最终状态，处理取消与成交同时发生的竞态。
-        ApiResponse<QueryOrderResponse> finalResponse = api.queryOrder(
-                pending.symbol, pending.orderId, null, null);
+        ApiResponse<QueryOrderResponse> finalResponse = api.queryOrder(pending.symbol, pending.orderId, null, null);
         QueryOrderResponse finalOrder = finalResponse.getData();
         if (finalOrder == null) {
             return;
@@ -160,17 +133,18 @@ public class PendingOrderProtectionService {
 
         double executedQty = parseDouble(finalOrder.getExecutedQty());
         if (executedQty > 0) {
-            String finalStatus = finalOrder.getStatus();
             double avgPrice = parseDouble(finalOrder.getAvgPrice());
             if (avgPrice <= 0) {
                 avgPrice = parseDouble(finalOrder.getPrice());
             }
             if (avgPrice > 0) {
                 log.info("取消挂单时发现订单已经产生成交，转为保护已成交仓位: symbol={}, orderId={}, status={}, executedQty={}, avgPrice={}",
-                        pending.symbol, pending.orderId, finalStatus, executedQty, avgPrice);
+                        pending.symbol, pending.orderId, finalOrder.getStatus(), executedQty, avgPrice);
                 createProtectionOrders(pending, executedQty, avgPrice);
                 if (pending.slCreated && pending.tpCreated) {
                     pendingOrders.remove(pending.orderId);
+                    tradingState.removeOrder(pending.orderId);
+                    tradingState.refreshExecutionState(pending.symbol);
                 }
             }
             return;
@@ -180,6 +154,8 @@ public class PendingOrderProtectionService {
         if ("CANCELED".equals(finalStatus) || "EXPIRED".equals(finalStatus)
                 || "EXPIRED_IN_MATCH".equals(finalStatus)) {
             pendingOrders.remove(pending.orderId);
+            tradingState.removeOrder(pending.orderId);
+            tradingState.refreshExecutionState(pending.symbol);
             log.info("限价开仓已超时取消且无成交: symbol={}, orderId={}, status={}",
                     pending.symbol, pending.orderId, finalStatus);
         }
@@ -207,7 +183,6 @@ public class PendingOrderProtectionService {
 
         tp = orderParameterCalculator.normalizeTriggerPrice(symbol, tp, side, true);
         sl = orderParameterCalculator.normalizeTriggerPrice(symbol, sl, side, false);
-
         Side closeSide = side == Side.BUY ? Side.SELL : Side.BUY;
 
         log.info("========== 开仓已产生成交，创建止盈止损 ==========");
@@ -218,17 +193,11 @@ public class PendingOrderProtectionService {
         log.info("止盈价格：{}", tp);
         log.info("止损价格：{}", sl);
 
-        // 使用 closePosition=true，不传 quantity。
-        // 这样第一次部分成交后建立的保护单，会覆盖该方向后续继续增加的整个持仓，
-        // 更接近网页 OTOCO 的“开仓触发保护”行为。
         if (!pending.slCreated) {
-            pending.slCreated = createClosePositionAlgoOrder(
-                    symbol, closeSide, OrderType.STOP_MARKET, sl, "SL");
+            pending.slCreated = createClosePositionAlgoOrder(symbol, closeSide, OrderType.STOP_MARKET, sl, "SL");
         }
-
         if (!pending.tpCreated) {
-            pending.tpCreated = createClosePositionAlgoOrder(
-                    symbol, closeSide, OrderType.TAKE_PROFIT_MARKET, tp, "TP");
+            pending.tpCreated = createClosePositionAlgoOrder(symbol, closeSide, OrderType.TAKE_PROFIT_MARKET, tp, "TP");
         }
 
         log.info("止盈止损保护状态: symbol={}, orderId={}, SL={}, TP={}",
@@ -255,13 +224,8 @@ public class PendingOrderProtectionService {
 
         NewAlgoOrderResponse data = response.getData();
         log.info("{} 保护单创建成功: symbol={}, algoId={}, type={}, side={}, triggerPrice={}, status={}",
-                name,
-                symbol,
-                data.getAlgoId(),
-                data.getOrderType(),
-                data.getSide(),
-                data.getTriggerPrice(),
-                data.getAlgoStatus());
+                name, symbol, data.getAlgoId(), data.getOrderType(), data.getSide(),
+                data.getTriggerPrice(), data.getAlgoStatus());
         return true;
     }
 
