@@ -125,15 +125,7 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
     }
 
     @Override
-    public OrderInfo createLimitOrderAndTPSL(
-            String symbol,
-            Side side,
-            TimeInForce timeInForce,
-            double quantity,
-            double price,
-            double tp,
-            double sl) {
-
+    public OrderInfo createLimitOrderAndTPSLForPrice(String symbol, Side side, TimeInForce timeInForce, double quantity, double price, double tp, double sl) {
         if (quantity <= 0) {
             throw new IllegalArgumentException("下单数量必须大于 0：" + quantity);
         }
@@ -144,9 +136,6 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
             throw new IllegalArgumentException("止盈止损价格必须大于 0：tp=" + tp + ", sl=" + sl);
         }
 
-        // 先创建限价开仓单。
-        // 注意：限价单如果没有成交，不能提前挂 closePosition=true 的 TP/SL，
-        // 否则 TP/SL 可能在未来意外作用于其它持仓。因此只有确认开仓单已经 FILLED 后才创建保护单。
         NewOrderRequest entryRequest = new NewOrderRequest();
         entryRequest.type(OrderType.LIMIT.name());
         entryRequest.symbol(symbol);
@@ -185,36 +174,67 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
             return entryOrder;
         }
 
-        // Binance 的条件单使用反向方向平仓。
         Side closeSide = side == Side.BUY ? Side.SELL : Side.BUY;
 
-        // 先挂止损。这样即使后面的止盈创建失败，持仓至少还有止损保护。
-        createClosePositionAlgoOrder(
-                symbol,
-                closeSide,
-                OrderType.STOP_MARKET,
-                sl,
-                "SL");
-
-        createClosePositionAlgoOrder(
-                symbol,
-                closeSide,
-                OrderType.TAKE_PROFIT_MARKET,
-                tp,
-                "TP");
+        createClosePositionAlgoOrder(symbol, closeSide, OrderType.STOP_MARKET, sl, "SL");
+        createClosePositionAlgoOrder(symbol, closeSide, OrderType.TAKE_PROFIT_MARKET, tp, "TP");
 
         log.info("止盈止损设置完成: symbol={}, tp={}, sl={}", symbol, tp, sl);
         log.info("=========================================");
         return entryOrder;
     }
 
-    private void createClosePositionAlgoOrder(
-            String symbol,
-            Side side,
-            OrderType type,
-            double triggerPrice,
-            String name) {
+    @Override
+    public OrderInfo createLimitOrderAndTPSLForProfitAndLoss(String symbol, Side side, TimeInForce timeInForce, double quantity, double price, double profitAmount, double lossAmount) {
+        if (quantity <= 0) {
+            throw new IllegalArgumentException("下单数量必须大于 0：" + quantity);
+        }
+        if (profitAmount <= 0 || lossAmount <= 0) {
+            throw new IllegalArgumentException("盈利和亏损金额必须大于 0：profitAmount=" + profitAmount + ", lossAmount=" + lossAmount);
+        }
 
+        double tp;
+        double sl;
+        if (side == Side.BUY) {
+            tp = price + profitAmount / quantity;
+            sl = price - lossAmount / quantity;
+        } else {
+            tp = price - profitAmount / quantity;
+            sl = price + lossAmount / quantity;
+        }
+
+        log.info("按照盈亏金额计算止盈止损: symbol={}, profitAmount={}, lossAmount={}, tp={}, sl={}",
+                symbol, profitAmount, lossAmount, tp, sl);
+
+        return createLimitOrderAndTPSLForPrice(symbol, side, timeInForce, quantity, price, tp, sl);
+    }
+
+    @Override
+    public OrderInfo createLimitOrderAndTPSLForPercentage(String symbol, Side side, TimeInForce timeInForce, double quantity, double price, double profitPercentage, double lossPercentage) {
+        if (price <= 0) {
+            throw new IllegalArgumentException("开仓价格必须大于 0：" + price);
+        }
+        if (profitPercentage <= 0 || lossPercentage <= 0) {
+            throw new IllegalArgumentException("盈利和亏损百分比必须大于 0：profitPercentage=" + profitPercentage + ", lossPercentage=" + lossPercentage);
+        }
+
+        double tp;
+        double sl;
+        if (side == Side.BUY) {
+            tp = price * (1 + profitPercentage / 100.0);
+            sl = price * (1 - lossPercentage / 100.0);
+        } else {
+            tp = price * (1 - profitPercentage / 100.0);
+            sl = price * (1 + lossPercentage / 100.0);
+        }
+
+        log.info("按照盈亏百分比计算止盈止损: symbol={}, profitPercentage={}%, lossPercentage={}%, tp={}, sl={}",
+                symbol, profitPercentage, lossPercentage, tp, sl);
+
+        return createLimitOrderAndTPSLForPrice(symbol, side, timeInForce, quantity, price, tp, sl);
+    }
+
+    private void createClosePositionAlgoOrder(String symbol, Side side, OrderType type, double triggerPrice, String name) {
         NewAlgoOrderRequest request = new NewAlgoOrderRequest();
         request.setAlgoType(algoType);
         request.setSymbol(symbol);
