@@ -209,6 +209,9 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
             throw new IllegalArgumentException("盈利和亏损金额必须大于 0：profitAmount=" + profitAmount + ", lossAmount=" + lossAmount);
         }
 
+        price = orderParameterCalculator.normalizeEntryPrice(symbol, price, Side.BUY.equals(side));
+        quantity = orderParameterCalculator.normalizeLimitQuantity(symbol, quantity, price);
+
         double tp;
         double sl;
         if (side == Side.BUY) {
@@ -233,6 +236,9 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
         if (profitPercentage <= 0 || lossPercentage <= 0) {
             throw new IllegalArgumentException("盈利和亏损百分比必须大于 0：profitPercentage=" + profitPercentage + ", lossPercentage=" + lossPercentage);
         }
+
+        price = orderParameterCalculator.normalizeEntryPrice(symbol, price, Side.BUY.equals(side));
+        quantity = orderParameterCalculator.normalizeLimitQuantity(symbol, quantity, price);
 
         double tp;
         double sl;
@@ -282,7 +288,7 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
         double positionAmt = positionInfo.getPositionAmt();
         Side closeSide = positionAmt > 0 ? Side.SELL : Side.BUY;
         double quantity = Math.abs(positionAmt);
-        quantity = orderParameterCalculator.normalizeLimitQuantity(symbol, quantity, positionInfo.getMarkPrice());
+        quantity = orderParameterCalculator.normalizeMarketQuantity(symbol, quantity, positionInfo.getMarkPrice());
 
         log.info("========== 市价平仓 ==========");
         log.info("交易对：{}", symbol);
