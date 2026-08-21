@@ -1,7 +1,7 @@
 package com.lxf.bian_bot.trading.service;
 
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.Side;
-import com.lxf.bian_bot.config.TradingConfig;
+import com.lxf.bian_bot.config.model.TradingConfig;
 import com.lxf.bian_bot.model.OrderInfo;
 import com.lxf.bian_bot.model.PositionInfo;
 import com.lxf.bian_bot.model.TradingDecision;
@@ -41,7 +41,6 @@ public class BinanceTradingServiceImpl implements BinanceTradingService {
         tradingState.updateExecutionState(symbol, TradingExecutionState.CHECKING);
 
         try {
-            // 账户、持仓和委托状态由 Binance User Data Stream 实时维护，不再在下单前主动 REST 刷新。
             PositionInfo position = tradingState.getPosition(symbol);
             if (position != null && Double.compare(position.getPositionAmt(), 0D) != 0) {
                 log.info("{} 已存在持仓，忽略重复交易信号: positionAmt={}", symbol, position.getPositionAmt());
@@ -89,7 +88,6 @@ public class BinanceTradingServiceImpl implements BinanceTradingService {
 
                 log.info("交易订单已提交: symbol={}, decision={}, orderId={}", symbol, decision.getDecision(), orderInfo.getOrderId());
 
-                // 开仓订单提交后的最终状态由 User Data Stream 的 ORDER_TRADE_UPDATE / ACCOUNT_UPDATE 更新。
                 if (orderInfo.getExecutedQty() > 0D) {
                     tradingState.updateExecutionState(symbol, TradingExecutionState.POSITION_OPEN);
                 } else {
