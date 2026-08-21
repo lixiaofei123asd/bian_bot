@@ -1,5 +1,6 @@
 package com.lxf.bian_bot.config;
 
+import com.lxf.bian_bot.config.model.StrategyConfig;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import lombok.RequiredArgsConstructor;
@@ -14,7 +15,7 @@ public class StrategyConfiguration {
 
     private final StrategyProperties strategyProperties;
 
-    // 将配置文件中的策略配置转换成业务层使用的Bean
+    /** 将配置文件中的策略配置转换成业务层使用的 Bean。 */
     @Bean
     public StrategyConfig strategyConfig() {
         LinkedHashMap<String, String> symbols = new LinkedHashMap<>();

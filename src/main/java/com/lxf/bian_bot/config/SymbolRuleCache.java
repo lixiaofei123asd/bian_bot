@@ -3,6 +3,10 @@ package com.lxf.bian_bot.config;
 import com.binance.connector.client.common.ApiResponse;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.api.DerivativesTradingUsdsFuturesRestApi;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.ExchangeInformationResponse;
+import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.NotionalAndLeverageBracketsResponse;
+import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.NotionalAndLeverageBracketsResponse1;
+import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.NotionalAndLeverageBracketsResponse1Inner;
+import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.NotionalAndLeverageBracketsResponse1InnerBracketsInner;
 import com.lxf.bian_bot.model.SymbolRule;
 import jakarta.annotation.PostConstruct;
 import java.math.BigDecimal;
@@ -85,6 +89,63 @@ public class SymbolRuleCache {
 
     public SymbolRule get(String symbol) {
         return rules.get(symbol);
+    }
+
+    /**
+     * 获取交易对允许的最大杠杆。
+     *
+     * <p>最大杠杆来自 Binance 的 leverageBracket，而不是 exchangeInfo 的 symbol filter。
+     * 因此这里采用按需加载，避免启动时为全部交易对逐个请求接口。</p>
+     */
+    public Long getMaxLeverage(String symbol) {
+        if (symbol == null || symbol.isBlank()) {
+            throw new IllegalArgumentException("symbol 不能为空");
+        }
+
+        String normalizedSymbol = symbol.trim().toUpperCase();
+        SymbolRule rule = rules.get(normalizedSymbol);
+        if (rule == null) {
+            throw new IllegalArgumentException("交易对不存在: " + normalizedSymbol);
+        }
+
+        if (rule.getMaxLeverage() != null) {
+            return rule.getMaxLeverage();
+        }
+
+        synchronized (rule) {
+            if (rule.getMaxLeverage() != null) {
+                return rule.getMaxLeverage();
+            }
+
+            ApiResponse<NotionalAndLeverageBracketsResponse> response =
+                    api.notionalAndLeverageBrackets(normalizedSymbol, null);
+            NotionalAndLeverageBracketsResponse data = response.getData();
+
+            if (data == null || !(data.getActualInstance() instanceof NotionalAndLeverageBracketsResponse1 bracketResponse)) {
+                throw new IllegalStateException("无法获取交易对最大杠杆: " + normalizedSymbol);
+            }
+
+            NotionalAndLeverageBracketsResponse1Inner symbolBracket = bracketResponse.stream()
+                    .filter(item -> normalizedSymbol.equalsIgnoreCase(item.getSymbol()))
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalStateException("杠杆规则中不存在交易对: " + normalizedSymbol));
+
+            Long maxLeverage = symbolBracket.getBrackets() == null
+                    ? null
+                    : symbolBracket.getBrackets().stream()
+                    .map(NotionalAndLeverageBracketsResponse1InnerBracketsInner::getInitialLeverage)
+                    .filter(java.util.Objects::nonNull)
+                    .max(Long::compareTo)
+                    .orElse(null);
+
+            if (maxLeverage == null || maxLeverage <= 0) {
+                throw new IllegalStateException("交易对最大杠杆无效: " + normalizedSymbol);
+            }
+
+            rule.setMaxLeverage(maxLeverage);
+            log.info("获取交易对最大杠杆: symbol={}, maxLeverage={}", normalizedSymbol, maxLeverage);
+            return maxLeverage;
+        }
     }
 
     public List<String> filterValidSymbols(List<String> symbols) {
