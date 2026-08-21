@@ -21,12 +21,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
-/**
- * Binance Futures User Data Stream。
- *
- * <p>负责实时接收账户、持仓和订单成交事件，并将最新状态写入 TradingState。
- * User Data Stream 不提供主动账户快照接口，因此运行期间以 Binance 推送事件作为实时状态来源。
- */
+/** Binance Futures User Data Stream。 */
 @Slf4j
 @Service
 public class BinanceUserDataStreamServiceImpl implements com.lxf.bian_bot.service.BinanceUserDataStreamService {
@@ -59,8 +54,7 @@ public class BinanceUserDataStreamServiceImpl implements com.lxf.bian_bot.servic
                 webSocketProperties.getWebSocketStreamsUrl(),
                 webSocketProperties.isProxyEnabled(),
                 webSocketProperties.getProxyHost(),
-                webSocketProperties.getProxyPort()
-        );
+                webSocketProperties.getProxyPort());
         this.client.setMessageListener(this::handleMessage);
         this.client.setErrorListener(error -> log.error("User Data Stream WebSocket 异常", error));
         this.client.setCloseListener(() -> {
@@ -90,7 +84,6 @@ public class BinanceUserDataStreamServiceImpl implements com.lxf.bian_bot.servic
             if (data == null || data.getListenKey() == null || data.getListenKey().isBlank()) {
                 throw new IllegalStateException("Binance 未返回有效 listenKey");
             }
-
             listenKey = data.getListenKey();
             lastKeepaliveTime = System.currentTimeMillis();
             client.connect(listenKey);
@@ -105,12 +98,10 @@ public class BinanceUserDataStreamServiceImpl implements com.lxf.bian_bot.servic
         if (!started) {
             return;
         }
-
         if (listenKey == null || listenKey.isBlank()) {
             startStream();
             return;
         }
-
         long now = System.currentTimeMillis();
         if (now - lastKeepaliveTime >= KEEPALIVE_INTERVAL_MILLIS) {
             try {
@@ -123,7 +114,6 @@ public class BinanceUserDataStreamServiceImpl implements com.lxf.bian_bot.servic
                 listenKey = null;
             }
         }
-
         if (!client.isConnected() && listenKey != null) {
             log.warn("Binance User Data Stream 当前未连接，重新建立 WebSocket");
             client.connect(listenKey);
@@ -132,7 +122,6 @@ public class BinanceUserDataStreamServiceImpl implements com.lxf.bian_bot.servic
 
     private void handleMessage(JsonNode root) {
         String eventType = root.path("e").asText();
-
         switch (eventType) {
             case "ACCOUNT_UPDATE" -> handleAccountUpdate(root);
             case "ORDER_TRADE_UPDATE" -> handleOrderTradeUpdate(root);
@@ -148,7 +137,6 @@ public class BinanceUserDataStreamServiceImpl implements com.lxf.bian_bot.servic
 
     private void handleAccountUpdate(JsonNode root) {
         JsonNode accountNode = root.path("a");
-
         log.info("========== Binance User Data ACCOUNT_UPDATE ==========");
         log.info("事件时间: {}", root.path("E").asLong());
         log.info("账户更新原因: {}", accountNode.path("m").asText());
@@ -158,9 +146,7 @@ public class BinanceUserDataStreamServiceImpl implements com.lxf.bian_bot.servic
             for (JsonNode balance : balances) {
                 if ("USDT".equals(balance.path("a").asText())) {
                     log.info("USDT余额更新: walletBalance={}, crossWalletBalance={}, balanceChange={}",
-                            balance.path("wb").asText(),
-                            balance.path("cw").asText(),
-                            balance.path("bc").asText());
+                            balance.path("wb").asText(), balance.path("cw").asText(), balance.path("bc").asText());
                 }
             }
         }
@@ -169,12 +155,8 @@ public class BinanceUserDataStreamServiceImpl implements com.lxf.bian_bot.servic
         if (positions.isArray()) {
             for (JsonNode position : positions) {
                 log.info("持仓更新: symbol={}, positionAmt={}, entryPrice={}, breakEvenPrice={}, unrealizedProfit={}, positionSide={}",
-                        position.path("s").asText(),
-                        position.path("pa").asText(),
-                        position.path("ep").asText(),
-                        position.path("bep").asText(),
-                        position.path("up").asText(),
-                        position.path("ps").asText());
+                        position.path("s").asText(), position.path("pa").asText(), position.path("ep").asText(),
+                        position.path("bep").asText(), position.path("up").asText(), position.path("ps").asText());
             }
         }
         log.info("=====================================================");
@@ -201,7 +183,6 @@ public class BinanceUserDataStreamServiceImpl implements com.lxf.bian_bot.servic
                 }
             }
         }
-
         if (positions != null && positions.isArray()) {
             for (JsonNode position : positions) {
                 unrealizedProfit += number(position, "up", 0D);
@@ -216,7 +197,6 @@ public class BinanceUserDataStreamServiceImpl implements com.lxf.bian_bot.servic
                 .maxWithdrawAmount(maxWithdraw)
                 .canTrade(canTrade)
                 .build();
-
         tradingState.updateAccount(accountInfo);
         notifyListeners(accountListeners, accountInfo);
     }
@@ -232,6 +212,9 @@ public class BinanceUserDataStreamServiceImpl implements com.lxf.bian_bot.servic
                 continue;
             }
 
+            PositionInfo oldPosition = tradingState.getPosition(symbol);
+            double oldAmount = oldPosition == null ? 0D : oldPosition.getPositionAmt();
+
             PositionInfo position = PositionInfo.builder()
                     .symbol(symbol)
                     .positionAmt(number(node, "pa", 0D))
@@ -243,8 +226,20 @@ public class BinanceUserDataStreamServiceImpl implements com.lxf.bian_bot.servic
                     .autoAddMargin("true".equalsIgnoreCase(text(node, "iw")))
                     .build();
 
+            double newAmount = position.getPositionAmt();
             tradingState.updatePosition(position);
-            updateExecutionState(symbol);
+
+            // 只有“原来有持仓 -> 现在持仓归零”才清理该币种残留订单。
+            // 这样不会误删“当前无持仓但正在等待成交的全新开仓挂单”。
+            if (Double.compare(oldAmount, 0D) != 0 && Double.compare(newAmount, 0D) == 0) {
+                int removed = tradingState.clearSymbolOrders(symbol);
+                tradingState.updateExecutionState(symbol, TradingExecutionState.READY);
+                log.info("{} 持仓已归零，清理 TradingState 残留订单: removed={}, executionState=READY",
+                        symbol, removed);
+            } else {
+                tradingState.refreshExecutionState(symbol);
+            }
+
             notifyListeners(positionListeners, position);
         }
     }
@@ -266,18 +261,9 @@ public class BinanceUserDataStreamServiceImpl implements com.lxf.bian_bot.servic
 
         log.info("========== Binance User Data ORDER_TRADE_UPDATE ==========");
         log.info("订单更新: symbol={}, orderId={}, clientOrderId={}, side={}, type={}, status={}, execType={}, orderQty={}, orderPrice={}, avgPrice={}, lastFilledQty={}, lastFilledPrice={}",
-                symbol,
-                orderId,
-                text(orderNode, "c"),
-                text(orderNode, "S"),
-                text(orderNode, "o"),
-                status,
-                executionType,
-                text(orderNode, "q"),
-                text(orderNode, "p"),
-                text(orderNode, "ap"),
-                text(orderNode, "l"),
-                text(orderNode, "L"));
+                symbol, orderId, text(orderNode, "c"), text(orderNode, "S"), text(orderNode, "o"), status,
+                executionType, text(orderNode, "q"), text(orderNode, "p"), text(orderNode, "ap"),
+                text(orderNode, "l"), text(orderNode, "L"));
         log.info("========================================================");
 
         OrderInfo order = OrderInfo.builder()
@@ -302,26 +288,8 @@ public class BinanceUserDataStreamServiceImpl implements com.lxf.bian_bot.servic
             tradingState.removeOrder(orderId);
         }
 
-        updateExecutionState(symbol);
+        tradingState.refreshExecutionState(symbol);
         notifyListeners(orderListeners, order);
-    }
-
-    private void updateExecutionState(String symbol) {
-        PositionInfo position = tradingState.getPosition(symbol);
-        if (position != null && Double.compare(position.getPositionAmt(), 0D) != 0) {
-            tradingState.updateExecutionState(symbol, TradingExecutionState.POSITION_OPEN);
-            return;
-        }
-
-        List<OrderInfo> openOrders = tradingState.getOpenOrders(symbol);
-        if (!openOrders.isEmpty()) {
-            tradingState.updateExecutionState(symbol, TradingExecutionState.ORDER_OPEN);
-            return;
-        }
-
-        if (!tradingState.isOrderSubmitting(symbol)) {
-            tradingState.updateExecutionState(symbol, TradingExecutionState.READY);
-        }
     }
 
     private boolean isOpenStatus(String status) {
