@@ -8,7 +8,6 @@ import com.lxf.bian_bot.model.TradingDecision;
 import com.lxf.bian_bot.service.BinanceTradeService;
 import com.lxf.bian_bot.trading.state.TradingExecutionState;
 import com.lxf.bian_bot.trading.state.TradingState;
-import com.lxf.bian_bot.trading.state.TradingStateManager;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -18,13 +17,11 @@ import org.springframework.stereotype.Service;
 public class BinanceTradingServiceImpl implements BinanceTradingService {
 
     private final BinanceTradeService tradeService;
-    private final TradingStateManager stateManager;
     private final TradingState tradingState;
     private final TradingConfig tradingConfig;
 
-    public BinanceTradingServiceImpl(BinanceTradeService tradeService, TradingStateManager stateManager, TradingState tradingState, TradingConfig tradingConfig) {
+    public BinanceTradingServiceImpl(BinanceTradeService tradeService, TradingState tradingState, TradingConfig tradingConfig) {
         this.tradeService = tradeService;
-        this.stateManager = stateManager;
         this.tradingState = tradingState;
         this.tradingConfig = tradingConfig;
     }
@@ -44,9 +41,7 @@ public class BinanceTradingServiceImpl implements BinanceTradingService {
         tradingState.updateExecutionState(symbol, TradingExecutionState.CHECKING);
 
         try {
-            // 下单前重新同步一次真实账户状态
-            stateManager.refreshSymbol(symbol);
-
+            // 账户、持仓和委托状态由 Binance User Data Stream 实时维护，不再在下单前主动 REST 刷新。
             PositionInfo position = tradingState.getPosition(symbol);
             if (position != null && Double.compare(position.getPositionAmt(), 0D) != 0) {
                 log.info("{} 已存在持仓，忽略重复交易信号: positionAmt={}", symbol, position.getPositionAmt());
@@ -94,17 +89,11 @@ public class BinanceTradingServiceImpl implements BinanceTradingService {
 
                 log.info("交易订单已提交: symbol={}, decision={}, orderId={}", symbol, decision.getDecision(), orderInfo.getOrderId());
 
-                // 下单后立即重新查询一次，判断订单是否仍在委托中或者已经形成持仓
-                stateManager.refreshSymbol(symbol);
-                PositionInfo latestPosition = tradingState.getPosition(symbol);
-                List<OrderInfo> latestOpenOrders = tradingState.getOpenOrders(symbol);
-
-                if (latestPosition != null && Double.compare(latestPosition.getPositionAmt(), 0D) != 0) {
+                // 开仓订单提交后的最终状态由 User Data Stream 的 ORDER_TRADE_UPDATE / ACCOUNT_UPDATE 更新。
+                if (orderInfo.getExecutedQty() > 0D) {
                     tradingState.updateExecutionState(symbol, TradingExecutionState.POSITION_OPEN);
-                } else if (!latestOpenOrders.isEmpty()) {
-                    tradingState.updateExecutionState(symbol, TradingExecutionState.ORDER_OPEN);
                 } else {
-                    tradingState.updateExecutionState(symbol, TradingExecutionState.READY);
+                    tradingState.updateExecutionState(symbol, TradingExecutionState.ORDER_OPEN);
                 }
             } finally {
                 tradingState.finishOrderSubmitting(symbol);
