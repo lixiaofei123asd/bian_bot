@@ -11,7 +11,7 @@ logging:
 # ==================== 交易配置 ====================
 trading:
   # 是否允许交易信号真正发送订单
-  enabled: true
+  enabled: false
   # 每次开仓使用的 USDT 金额
   usdt-amount: 10
   # 下单模式：
@@ -30,7 +30,7 @@ trading:
   # 保证金模式：
   # ISOLATED = 逐仓
   # CROSSED  = 全仓
-  margin-type: CROSSED
+  margin-type: ISOLATED
   # 是否使用交易对允许的最大杠杆
   # true  = 自动使用该交易对最大杠杆，下面的 leverage 配置失效
   # false = 使用下面 leverage 配置的杠杆

@@ -9,7 +9,7 @@ import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.NewOrderRespType;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.QueryOrderResponse;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.Side;
-import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.OrderType;
+import com.lxf.bian_bot.model.OrderType;
 import com.lxf.bian_bot.trading.order.OrderParameterCalculator;
 import com.lxf.bian_bot.trading.state.TradingState;
 import java.util.Map;
@@ -240,7 +240,7 @@ public class PendingOrderProtectionService {
             NewOrderRequest request = new NewOrderRequest();
             request.setSymbol(pending.symbol);
             request.setSide(closeSide);
-            request.setType(com.binance.connector.client.derivatives_trading_usds_futures.rest.model.OrderType.MARKET.name());
+            request.setType(OrderType.MARKET.name());
             request.setQuantity(quantity);
             request.setReduceOnly("true");
             request.setNewOrderRespType(NewOrderRespType.RESULT);

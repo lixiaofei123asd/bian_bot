@@ -68,15 +68,6 @@ public class KlineCache {
         return cache.getIfPresent(buildKey(symbol, interval)) != null;
     }
 
-    public void remove(String symbol, String interval) {
-        cache.invalidate(buildKey(symbol, interval));
-    }
-
-    public void clear() {
-        cache.invalidateAll();
-        log.info("KlineCache 已清空");
-    }
-
     private boolean isClosed(BinanceKline kline) {
         return kline.getCloseTime() != null && System.currentTimeMillis() >= kline.getCloseTime();
     }

@@ -28,7 +28,6 @@ public class BinanceUserDataStreamServiceImpl implements com.lxf.bian_bot.servic
     private static final long KEEPALIVE_INTERVAL_MILLIS = 30 * 60 * 1000L;
 
     private final UserDataStreamsApi userDataStreamsApi;
-    private final BinanceConfig binanceConfig;
     private final TradingState tradingState;
     private final BinanceUserDataStreamClient client;
 
@@ -44,7 +43,6 @@ public class BinanceUserDataStreamServiceImpl implements com.lxf.bian_bot.servic
                                             BinanceConfig binanceConfig,
                                             TradingState tradingState) {
         this.userDataStreamsApi = userDataStreamsApi;
-        this.binanceConfig = binanceConfig;
         this.tradingState = tradingState;
         this.client = new BinanceUserDataStreamClient(
                 binanceConfig.getWebSocketStreamsUrl(),

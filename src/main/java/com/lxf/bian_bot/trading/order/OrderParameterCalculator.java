@@ -65,10 +65,6 @@ public class OrderParameterCalculator {
         return quantityValue.doubleValue();
     }
 
-    public double normalizePrice(String symbol, double price) {
-        return normalizePrice(symbol, price, RoundingMode.DOWN);
-    }
-
     public double normalizeEntryPrice(String symbol, double price, boolean buy) {
         return normalizePrice(symbol, price, buy ? RoundingMode.DOWN : RoundingMode.UP);
     }
@@ -122,12 +118,9 @@ public class OrderParameterCalculator {
     }
 
     private BigDecimal normalizeQuantityValue(SymbolRule rule, String symbol, BigDecimal quantity, boolean marketOrder) {
-        BigDecimal minQty = marketOrder && rule.getMarketMinQty() != null
-                ? rule.getMarketMinQty() : rule.getMinQty();
-        BigDecimal maxQty = marketOrder && rule.getMarketMaxQty() != null
-                ? rule.getMarketMaxQty() : rule.getMaxQty();
-        BigDecimal stepSize = marketOrder && rule.getMarketStepSize() != null
-                ? rule.getMarketStepSize() : rule.getStepSize();
+        BigDecimal minQty = marketOrder && rule.getMarketMinQty() != null ? rule.getMarketMinQty() : rule.getMinQty();
+        BigDecimal maxQty = marketOrder && rule.getMarketMaxQty() != null ? rule.getMarketMaxQty() : rule.getMaxQty();
+        BigDecimal stepSize = marketOrder && rule.getMarketStepSize() != null ? rule.getMarketStepSize() : rule.getStepSize();
 
         if (stepSize == null || stepSize.compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalArgumentException("交易规则缺少有效的数量步长：" + symbol);

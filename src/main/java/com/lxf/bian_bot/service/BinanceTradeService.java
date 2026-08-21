@@ -2,19 +2,12 @@ package com.lxf.bian_bot.service;
 
 
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.Side;
-import com.lxf.bian_bot.model.ExchangeInfo;
 import com.lxf.bian_bot.model.LeverageInfo;
-import com.lxf.bian_bot.model.TradingMarginType;
 import com.lxf.bian_bot.model.OrderInfo;
-import com.lxf.bian_bot.model.PositionInfo;
-
 import com.lxf.bian_bot.model.TimeInForce;
-import java.util.List;
+import com.lxf.bian_bot.model.TradingMarginType;
 
 public interface BinanceTradeService {
-
-
-    ExchangeInfo getExchangeInfo();
 
 
     /**
@@ -114,28 +107,4 @@ public interface BinanceTradeService {
      * @return 订单结果
      */
     OrderInfo closeMarketOrder(String symbol);
-
-    /**
-     * 查询指定交易对当前持仓
-     *
-     * @param symbol 交易对
-     * @return 持仓信息
-     */
-    PositionInfo getPosition(String symbol);
-
-    /**
-     * 查询全部持仓
-     */
-    List<PositionInfo> getAllPositions();
-
-    List<OrderInfo> getOpenOrders(String symbol);
-    /**
-     * 查询订单
-     */
-    OrderInfo getOrder(String symbol, long orderId);
-
-    /**
-     * 取消订单
-     */
-    OrderInfo cancelOrder(String symbol, long orderId);
 }

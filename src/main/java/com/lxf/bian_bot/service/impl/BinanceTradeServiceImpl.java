@@ -2,12 +2,10 @@ package com.lxf.bian_bot.service.impl;
 
 import com.binance.connector.client.common.ApiResponse;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.api.DerivativesTradingUsdsFuturesRestApi;
-import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.AllOrdersResponseInner;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.ChangeInitialLeverageRequest;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.ChangeInitialLeverageResponse;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.ChangeMarginTypeRequest;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.ChangeMarginTypeResponse;
-import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.CurrentAllOpenOrdersResponse;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.MarginType;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.NewOrderRequest;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.NewOrderRespType;
@@ -16,7 +14,6 @@ import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.PositionInformationV2ResponseInner;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.Side;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.SymbolOrderBookTickerResponse;
-import com.lxf.bian_bot.model.ExchangeInfo;
 import com.lxf.bian_bot.model.LeverageInfo;
 import com.lxf.bian_bot.model.OrderInfo;
 import com.lxf.bian_bot.model.OrderType;
@@ -26,8 +23,6 @@ import com.lxf.bian_bot.model.TradingMarginType;
 import com.lxf.bian_bot.service.BinanceTradeService;
 import com.lxf.bian_bot.trading.order.OrderParameterCalculator;
 import com.lxf.bian_bot.trading.service.PendingOrderProtectionService;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Objects;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -46,11 +41,6 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
         this.api = api;
         this.orderParameterCalculator = orderParameterCalculator;
         this.pendingOrderProtectionService = pendingOrderProtectionService;
-    }
-
-    @Override
-    public ExchangeInfo getExchangeInfo() {
-        return null;
     }
 
     @Override
@@ -275,55 +265,6 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
         request.setReduceOnly("true");
         request.setNewOrderRespType(NewOrderRespType.RESULT);
         return newOrder(request, "市价平仓失败！");
-    }
-
-    @Override
-    public PositionInfo getPosition(String symbol) {
-        return getPositionInfo(symbol);
-    }
-
-    @Override
-    public List<PositionInfo> getAllPositions() {
-        return List.of();
-    }
-
-    @Override
-    public List<OrderInfo> getOpenOrders(String symbol) {
-        ApiResponse<CurrentAllOpenOrdersResponse> response = api.currentAllOpenOrders(symbol, null);
-        CurrentAllOpenOrdersResponse data = response.getData();
-        List<OrderInfo> orders = new ArrayList<>();
-        if (data == null) {
-            return orders;
-        }
-
-        for (AllOrdersResponseInner order : data) {
-            orders.add(OrderInfo.builder()
-                    .symbol(order.getSymbol())
-                    .orderId(order.getOrderId() == null ? 0L : order.getOrderId())
-                    .clientOrderId(order.getClientOrderId())
-                    .side(order.getSide())
-                    .type(order.getType())
-                    .origQty(parseDouble(order.getOrigQty()))
-                    .executedQty(parseDouble(order.getExecutedQty()))
-                    .avgPrice(parseDouble(order.getAvgPrice()))
-                    .price(parseDouble(order.getPrice()))
-                    .status(order.getStatus())
-                    .reduceOnly(Boolean.TRUE.equals(order.getReduceOnly()))
-                    .positionSide(order.getPositionSide())
-                    .updateTime(order.getUpdateTime() == null ? 0L : order.getUpdateTime())
-                    .build());
-        }
-        return orders;
-    }
-
-    @Override
-    public OrderInfo getOrder(String symbol, long orderId) {
-        return null;
-    }
-
-    @Override
-    public OrderInfo cancelOrder(String symbol, long orderId) {
-        return null;
     }
 
     private PositionInfo getPositionInfo(String symbol) {
