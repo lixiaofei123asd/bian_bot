@@ -234,9 +234,29 @@ public class BinanceUserDataStreamServiceImpl implements com.lxf.bian_bot.servic
 
         String status = text(orderNode, "X");
         String executionType = text(orderNode, "x");
+        boolean reduceOnly = orderNode.path("R").asBoolean(false);
+        double lastFilledQty = number(orderNode, "l", 0D);
 
         if ("TRADE".equals(executionType)) {
             tradingState.addTodayRealizedPnl(number(orderNode, "rp", 0D));
+
+            // reduceOnly 成交时，先用 ORDER_TRADE_UPDATE 增量修正本地持仓。
+            // 这样即使 ACCOUNT_UPDATE 稍后到达，TradingState 也不会在这段时间继续保留旧仓位。
+            PositionInfo adjustedPosition = tradingState.applyTradeToPosition(
+                    symbol, text(orderNode, "S"), reduceOnly, lastFilledQty);
+            if (adjustedPosition != null) {
+                log.info("根据成交事件同步本地持仓: symbol={}, side={}, reduceOnly={}, lastFilledQty={}, positionAmt={}",
+                        symbol, text(orderNode, "S"), reduceOnly, lastFilledQty, adjustedPosition.getPositionAmt());
+
+                if (!adjustedPosition.hasPosition()) {
+                    int removed = tradingState.clearSymbolOrders(symbol);
+                    tradingState.updateExecutionState(symbol, TradingExecutionState.READY);
+                    log.info("{} reduceOnly 成交后持仓已归零，清理 TradingState 残留订单: removed={}, executionState=READY",
+                            symbol, removed);
+                } else {
+                    tradingState.refreshExecutionState(symbol);
+                }
+            }
         }
 
         log.info("========== Binance User Data ORDER_TRADE_UPDATE ==========");
@@ -257,7 +277,7 @@ public class BinanceUserDataStreamServiceImpl implements com.lxf.bian_bot.servic
                 .avgPrice(number(orderNode, "ap", 0D))
                 .price(number(orderNode, "p", 0D))
                 .status(status)
-                .reduceOnly(orderNode.path("R").asBoolean(false))
+                .reduceOnly(reduceOnly)
                 .positionSide(text(orderNode, "ps"))
                 .updateTime(orderNode.path("T").asLong(System.currentTimeMillis()))
                 .build();
