@@ -24,7 +24,8 @@ import org.springframework.stereotype.Service;
  * Binance Futures User Data Stream。
  *
  * <p>负责实时接收账户、持仓和订单成交事件，并将最新状态写入 TradingState。
- * REST 定时刷新仍然保留，作为断线后的状态校准和兜底机制。
+ * User Data Stream 不提供主动账户快照接口，因此这里不通过 User Data Stream
+ * 主动查询余额；运行期间以 Binance 推送事件作为实时状态来源。
  */
 @Slf4j
 @Service
@@ -99,9 +100,6 @@ public class BinanceUserDataStreamServiceImpl implements com.lxf.bian_bot.servic
         }
     }
 
-    /**
-     * listenKey 官方有效期为60分钟，这里每30分钟续期一次。
-     */
     @Scheduled(fixedDelay = 60_000L)
     public void maintainStream() {
         if (!started) {
@@ -134,9 +132,10 @@ public class BinanceUserDataStreamServiceImpl implements com.lxf.bian_bot.servic
 
     private void handleMessage(JsonNode root) {
         String eventType = root.path("e").asText();
+
         switch (eventType) {
-            case "ACCOUNT_UPDATE" -> handleAccountUpdate(root.path("a"));
-            case "ORDER_TRADE_UPDATE" -> handleOrderTradeUpdate(root.path("o"));
+            case "ACCOUNT_UPDATE" -> handleAccountUpdate(root);
+            case "ORDER_TRADE_UPDATE" -> handleOrderTradeUpdate(root);
             case "listenKeyExpired" -> {
                 log.warn("Binance User Data Stream listenKey 已过期，重新获取");
                 listenKey = null;
@@ -147,9 +146,41 @@ public class BinanceUserDataStreamServiceImpl implements com.lxf.bian_bot.servic
         }
     }
 
-    private void handleAccountUpdate(JsonNode accountNode) {
-        updateAccount(accountNode.path("B"), accountNode.path("P"));
-        updatePositions(accountNode.path("P"));
+    private void handleAccountUpdate(JsonNode root) {
+        JsonNode accountNode = root.path("a");
+
+        log.info("========== Binance User Data ACCOUNT_UPDATE ==========");
+        log.info("事件时间: {}", root.path("E").asLong());
+        log.info("账户更新原因: {}", accountNode.path("m").asText());
+
+        JsonNode balances = accountNode.path("B");
+        if (balances.isArray()) {
+            for (JsonNode balance : balances) {
+                if ("USDT".equals(balance.path("a").asText())) {
+                    log.info("USDT余额更新: walletBalance={}, crossWalletBalance={}, balanceChange={}",
+                            balance.path("wb").asText(),
+                            balance.path("cw").asText(),
+                            balance.path("bc").asText());
+                }
+            }
+        }
+
+        JsonNode positions = accountNode.path("P");
+        if (positions.isArray()) {
+            for (JsonNode position : positions) {
+                log.info("持仓更新: symbol={}, positionAmt={}, entryPrice={}, breakEvenPrice={}, unrealizedProfit={}, positionSide={}",
+                        position.path("s").asText(),
+                        position.path("pa").asText(),
+                        position.path("ep").asText(),
+                        position.path("bep").asText(),
+                        position.path("up").asText(),
+                        position.path("ps").asText());
+            }
+        }
+        log.info("=====================================================");
+
+        updateAccount(balances, positions);
+        updatePositions(positions);
     }
 
     private void updateAccount(JsonNode balances, JsonNode positions) {
@@ -217,8 +248,9 @@ public class BinanceUserDataStreamServiceImpl implements com.lxf.bian_bot.servic
         }
     }
 
-    private void handleOrderTradeUpdate(JsonNode orderNode) {
-        if (orderNode == null || orderNode.isMissingNode()) {
+    private void handleOrderTradeUpdate(JsonNode root) {
+        JsonNode orderNode = root.path("o");
+        if (orderNode.isMissingNode()) {
             return;
         }
 
@@ -229,6 +261,24 @@ public class BinanceUserDataStreamServiceImpl implements com.lxf.bian_bot.servic
         }
 
         String status = text(orderNode, "X");
+        String executionType = text(orderNode, "x");
+
+        log.info("========== Binance User Data ORDER_TRADE_UPDATE ==========");
+        log.info("订单更新: symbol={}, orderId={}, clientOrderId={}, side={}, type={}, status={}, execType={}, orderQty={}, orderPrice={}, avgPrice={}, lastFilledQty={}, lastFilledPrice={}",
+                symbol,
+                orderId,
+                text(orderNode, "c"),
+                text(orderNode, "S"),
+                text(orderNode, "o"),
+                status,
+                executionType,
+                text(orderNode, "q"),
+                text(orderNode, "p"),
+                text(orderNode, "ap"),
+                text(orderNode, "l"),
+                text(orderNode, "L"));
+        log.info("========================================================");
+
         OrderInfo order = OrderInfo.builder()
                 .symbol(symbol)
                 .orderId(orderId)
@@ -251,8 +301,6 @@ public class BinanceUserDataStreamServiceImpl implements com.lxf.bian_bot.servic
             tradingState.removeOrder(orderId);
         }
 
-        log.info("User Data Stream 订单更新: symbol={}, orderId={}, status={}, executedQty={}, avgPrice={}",
-                symbol, orderId, status, order.getExecutedQty(), order.getAvgPrice());
         notifyListeners(orderListeners, order);
     }
 
