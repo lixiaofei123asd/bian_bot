@@ -1,19 +1,76 @@
+# ==================== Binance 配置 ====================
 binance:
+  # Binance API Key
   api-key: YOUR_API_KEY
+
+  # Binance Secret Key
   secret-key: YOUR_SECRET_KEY
+
+  # 是否使用 Binance Testnet
   testnet: false
+
+  # Binance Futures REST API 地址
   base-url: https://fapi.binance.com
+
+  # Binance Futures WebSocket API 地址
   web-socket-api-url: wss://ws-fapi.binance.com/ws-fapi/v1
+
+  # 需要监控的交易对，多个交易对使用英文逗号分隔
   symbol: BTCUSDT,LABUSDT,BTWUSDT
+
+  # ==================== WebSocket Streams 配置 ====================
   streams:
+    # 是否使用代理
     proxy-enabled: true
+
+    # 代理主机
     proxy-host: 127.0.0.1
+
+    # 代理端口
     proxy-port: 10090
+
+    # Binance WebSocket Streams 地址
     web-socket-streams-url: wss://fstream.binance.com/stream
 
+# ==================== 策略配置 ====================
 # 每个币种只能配置一个策略
 strategy:
   symbols:
     BTCUSDT: STRATEGY1
     LABUSDT: STRATEGY2
     BTWUSDT: STRATEGY1
+
+# ==================== 交易配置 ====================
+trading:
+  # 是否允许交易信号真正发送订单
+  enabled: false
+
+  # 每次开仓使用的 USDT 金额
+  usdt-amount: 10
+
+  # 下单模式：LIMIT=限价单，MARKET=市价单
+  order-type: LIMIT
+
+  # 限价单价格来源：LATEST_PRICE=当前最新价格
+  limit-price-source: LATEST_PRICE
+
+  # 是否启用止盈止损
+  take-profit-stop-loss-enabled: true
+
+  # 止盈金额，单位：USDT
+  take-profit-amount: 0.02
+
+  # 止损金额，单位：USDT
+  stop-loss-amount: 0.03
+
+  # 保证金模式：ISOLATED=逐仓，CROSSED=全仓
+  margin-type: ISOLATED
+
+  # 是否使用交易对允许的最大杠杆；true 时 leverage 失效
+  use-max-leverage: false
+
+  # 目标杠杆；use-max-leverage=true 时不生效
+  leverage: 20
+
+  # 下单前是否自动设置杠杆
+  auto-set-leverage: true
