@@ -128,6 +128,7 @@ public interface BinanceTradeService {
      */
     List<PositionInfo> getAllPositions();
 
+    List<OrderInfo> getOpenOrders(String symbol);
     /**
      * 查询订单
      */

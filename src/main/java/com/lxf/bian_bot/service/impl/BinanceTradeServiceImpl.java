@@ -27,6 +27,7 @@ import com.lxf.bian_bot.model.TimeInForce;
 import com.lxf.bian_bot.model.TradingMarginType;
 import com.lxf.bian_bot.service.BinanceTradeService;
 import com.lxf.bian_bot.trading.order.OrderParameterCalculator;
+import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -85,24 +86,19 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
 
     @Override
     public OrderInfo createMarketOrder(String symbol, Side side, double usdtAmount) {
-        double quantity = calculateQuantity(symbol, side, usdtAmount);
-        ApiResponse<SymbolOrderBookTickerResponse> bookTicker = api.symbolOrderBookTicker(symbol);
-        SymbolOrderBookTickerResponse bookTickerData = bookTicker.getData();
-        double price = Side.BUY.equals(side)
-                ? Double.parseDouble(Objects.requireNonNull(bookTickerData.getSymbolOrderBookTickerResponse1().getAskPrice()))
-                : Double.parseDouble(Objects.requireNonNull(bookTickerData.getSymbolOrderBookTickerResponse1().getBidPrice()));
-        double quantity = orderParameterCalculator.calculateMarketQuantity(symbol, usdtAmount, price);
+       ApiResponse<SymbolOrderBookTickerResponse> bookTicker = api.symbolOrderBookTicker(symbol);
+       SymbolOrderBookTickerResponse bookTickerData = bookTicker.getData();
+       double price = Side.BUY.equals(side)
+               ? Double.parseDouble(Objects.requireNonNull(bookTickerData.getSymbolOrderBookTickerResponse1().getAskPrice()))
+               : Double.parseDouble(Objects.requireNonNull(bookTickerData.getSymbolOrderBookTickerResponse1().getBidPrice()));
+       double quantity = orderParameterCalculator.calculateMarketQuantity(symbol, usdtAmount, price);
 
         log.info("========== 市价下单 ==========");
         log.info("交易对：{}", symbol);
         log.info("方向：{}", side);
         log.info("USDT金额：{}", usdtAmount);
         log.info("实际数量：{}", quantity);
-        log.info("交易对：{}", symbol);
-        log.info("方向：{}", side);
-        log.info("USDT金额：{}", usdtAmount);
         log.info("盘口价格：{}", price);
-        log.info("实际数量：{}", quantity);
         log.info("==============================");
 
         NewOrderRequest request = new NewOrderRequest();
@@ -116,7 +112,6 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
 
     @Override
     public OrderInfo createLimitOrder(String symbol, Side side, TimeInForce timeInForce, double usdtAmount, double price) {
-        double quantity = calculateQuantity(symbol, side, usdtAmount);
         double quantity = orderParameterCalculator.calculateLimitQuantity(symbol, usdtAmount, price);
         log.info("========== 限价下单 ==========");
         log.info("交易对：{}", symbol);
@@ -287,7 +282,7 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
 
         log.info("========== 市价平仓 ==========");
         log.info("交易对：{}", symbol);
-        log.info("方向：{}", sideStr);
+        log.info("方向：{}", closeSide);
         log.info("实际数量：{}", quantity);
         log.info("==============================");
 
@@ -374,20 +369,6 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
     private double parseDouble(String value) {
         return value == null || value.isBlank() ? 0D : Double.parseDouble(value);
     }
-    @Override
-    public List<PositionInfo> getAllPositions() {
-        return List.of();
-    }
-
-    @Override
-    public OrderInfo getOrder(String symbol, long orderId) {
-        return null;
-    }
-
-    @Override
-    public OrderInfo cancelOrder(String symbol, long orderId) {
-        return null;
-    }
 
     private double calculateQuantity(String symbol, Side side, double usdtAmount) {
         ApiResponse<SymbolOrderBookTickerResponse> bookTicker = api.symbolOrderBookTicker(symbol);
@@ -407,7 +388,7 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
         double quantity = usdtAmount / price;
         DecimalFormat df = new DecimalFormat("#.#");
         return Double.parseDouble(df.format(quantity));
-
+    }
     private OrderInfo newOrder(NewOrderRequest request, String message) {
         ApiResponse<NewOrderResponse> response = api.newOrder(request);
         int statusCode = response.getStatusCode();
@@ -434,9 +415,5 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
                 .positionSide(data.getPositionSide())
                 .updateTime(data.getUpdateTime())
                 .build();
-    }
-
-    private double parseDouble(String value) {
-        return value == null || value.isBlank() ? 0D : Double.parseDouble(value);
     }
 }
