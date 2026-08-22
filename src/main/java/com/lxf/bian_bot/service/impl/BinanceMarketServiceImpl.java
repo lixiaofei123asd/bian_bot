@@ -4,11 +4,8 @@ import com.binance.connector.client.common.ApiResponse;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.api.DerivativesTradingUsdsFuturesRestApi;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.Interval;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.KlineCandlestickDataResponse;
-import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.LongShortRatioResponse;
-import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.Period;
 import com.lxf.bian_bot.cache.KlineCache;
 import com.lxf.bian_bot.model.BinanceKline;
-import com.lxf.bian_bot.model.BinanceLongShortRatio;
 import com.lxf.bian_bot.service.BinanceMarketService;
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -43,48 +40,6 @@ public class BinanceMarketServiceImpl implements BinanceMarketService {
         List<BinanceKline> klines = parseKlines(response.getData(), symbol);
         klineCache.put(symbol, cacheInterval, klines);
         return klines;
-    }
-
-    @Override
-    public List<BinanceKline> getKlines(String symbol, Interval interval, Long startTime, Long endTime, Long limit) {
-        log.info("获取 Binance K线: symbol={}, interval={}, startTime={}, endTime={}, limit={}", symbol, interval, startTime, endTime, limit);
-        ApiResponse<KlineCandlestickDataResponse> response = api.klineCandlestickData(symbol, interval, startTime, endTime, limit);
-        List<BinanceKline> klines = parseKlines(response.getData(), symbol);
-        klineCache.put(symbol, interval.toString(), klines);
-        return klines;
-    }
-
-    @Override
-    public BinanceKline getLatestKline(String symbol, Interval interval) {
-        List<BinanceKline> klines = getKlines(symbol, interval, 1L);
-        if (klines == null || klines.isEmpty()) {
-            return null;
-        }
-        return klines.getLast();
-    }
-
-    @Override
-    public List<BinanceKline> refreshLatestKlines(String symbol, Interval interval, Long limit) {
-        log.info("强制获取 Binance 最新 K线: symbol={}, interval={}, limit={}", symbol, interval, limit);
-        ApiResponse<KlineCandlestickDataResponse> response = api.klineCandlestickData(symbol, interval, null, null, limit);
-        return parseKlines(response.getData(), symbol);
-    }
-
-    @Override
-    public List<BinanceLongShortRatio> getLongShortRatio(String symbol, Period period, Long limit) {
-        ApiResponse<LongShortRatioResponse> response = api.longShortRatio(symbol, period, limit, null, null);
-        if (response.getData() != null) {
-            return response.getData().stream().map(item -> {
-                BinanceLongShortRatio binanceLongShortRatio = new BinanceLongShortRatio();
-                binanceLongShortRatio.setSymbol(item.getSymbol());
-                binanceLongShortRatio.setLongAccount(new BigDecimal(item.getLongAccount()));
-                binanceLongShortRatio.setLongShortRatio(new BigDecimal(item.getLongShortRatio()));
-                binanceLongShortRatio.setShortAccount(new BigDecimal(item.getShortAccount()));
-                binanceLongShortRatio.setTimestamp(Long.parseLong(item.getTimestamp()));
-                return binanceLongShortRatio;
-            }).toList();
-        }
-        return new ArrayList<>();
     }
 
     private List<BinanceKline> parseKlines(KlineCandlestickDataResponse response, String symbol) {
@@ -122,4 +77,3 @@ public class BinanceMarketServiceImpl implements BinanceMarketService {
         return new ArrayList<>(klines.subList(klines.size() - limit.intValue(), klines.size()));
     }
 }
-
