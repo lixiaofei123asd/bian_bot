@@ -35,19 +35,21 @@ public class BinanceMarketAnalysisServiceImpl implements BinanceMarketAnalysisSe
         log.info("========== 开始市场分析 {} ==========", symbol);
 
         List<BinanceKline> klines = klineCache.get(symbol, KLINE_INTERVAL);
-        log.debug("从 KlineCache 获取 K线: symbol={}, interval={}, size={}", symbol, KLINE_INTERVAL, klines.size());
-
         if (klines.isEmpty()) {
             log.warn("{} KlineCache 中没有 K线数据", symbol);
             return buildWaitDecision(symbol);
         }
 
         BigDecimal currentPrice = klines.getLast().getClosePrice();
-
         String strategyName = strategyConfig.getStrategyName(symbol);
         Strategy strategy = strategyRegistry.getStrategy(strategyName);
 
-        TradingSignal signal = strategy.execute(klines);
+        if (strategy == null) {
+            log.warn("未找到策略: symbol={}, strategy={}", symbol, strategyName);
+            return buildWaitDecision(symbol);
+        }
+
+        TradingSignal signal = strategy.execute(symbol);
         TradingDecision decision = buildDecision(symbol, currentPrice, signal, strategyName);
 
         log.info("市场分析完成: symbol={}, strategy={}, decision={}", symbol, strategyName, decision.getDecision());
