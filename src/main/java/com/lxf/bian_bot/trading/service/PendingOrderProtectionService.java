@@ -3,11 +3,13 @@ package com.lxf.bian_bot.trading.service;
 import com.binance.connector.client.common.ApiException;
 import com.binance.connector.client.common.ApiResponse;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.api.DerivativesTradingUsdsFuturesRestApi;
+import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.AlgoType;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.NewAlgoOrderRequest;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.NewAlgoOrderResponse;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.NewOrderRequest;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.NewOrderRespType;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.QueryOrderResponse;
+import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.ReduceOnly;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.Side;
 import com.lxf.bian_bot.model.OrderType;
 import com.lxf.bian_bot.trading.order.OrderParameterCalculator;
@@ -23,8 +25,6 @@ import org.springframework.stereotype.Service;
 @Service
 public class PendingOrderProtectionService {
 
-    private static final String ALGO_TYPE = "CONDITIONAL";
-    private static final String CLOSE_POSITION = "true";
     private static final String IMMEDIATE_TRIGGER_CODE = "-2021";
     private static final long ENTRY_ORDER_TIMEOUT_MILLIS = 60_000L;
 
@@ -197,10 +197,12 @@ public class PendingOrderProtectionService {
 
         try {
             if (!pending.slCreated) {
-                pending.slCreated = createClosePositionAlgoOrder(symbol, closeSide, OrderType.STOP_MARKET, sl, "SL");
+                pending.slCreated = createProtectionAlgoOrder(
+                        symbol, closeSide, OrderType.STOP_MARKET, sl, quantity, "SL");
             }
             if (!pending.tpCreated) {
-                pending.tpCreated = createClosePositionAlgoOrder(symbol, closeSide, OrderType.TAKE_PROFIT_MARKET, tp, "TP");
+                pending.tpCreated = createProtectionAlgoOrder(
+                        symbol, closeSide, OrderType.TAKE_PROFIT_MARKET, tp, quantity, "TP");
             }
         } catch (ApiException e) {
             if (isImmediateTriggerException(e)) {
@@ -269,27 +271,34 @@ public class PendingOrderProtectionService {
         return message != null && message.contains(IMMEDIATE_TRIGGER_CODE);
     }
 
-    private boolean createClosePositionAlgoOrder(String symbol, Side side, OrderType type,
-                                                 double triggerPrice, String name) {
+    /**
+     * 使用实际成交数量创建保护单，而不是 closePosition=true 的 Close-All 保护单。
+     * Binance 对同方向的 closePosition 条件单存在额外限制，容易出现 -4130，
+     * 导致第一个保护单成功、第二个保护单失败。这里改成 quantity + reduceOnly，
+     * 两个保护单分别保护本次实际成交数量，可以同时存在，并且不会增加仓位。
+     */
+    private boolean createProtectionAlgoOrder(String symbol, Side side, OrderType type,
+                                              double triggerPrice, double quantity, String name) {
         NewAlgoOrderRequest request = new NewAlgoOrderRequest();
-        request.setAlgoType(ALGO_TYPE);
+        request.setAlgoType(AlgoType.CONDITIONAL);
         request.setSymbol(symbol);
         request.setSide(side);
         request.setType(type.name());
+        request.setQuantity(quantity);
         request.setTriggerPrice(triggerPrice);
-        request.setClosePosition(CLOSE_POSITION);
+        request.setReduceOnly(ReduceOnly.TRUE);
         request.setNewOrderRespType(NewOrderRespType.RESULT);
 
         ApiResponse<NewAlgoOrderResponse> response = api.newAlgoOrder(request);
         if (response.getStatusCode() != 200 || response.getData() == null) {
             throw new RuntimeException(name + " 止盈止损订单创建失败！symbol=" + symbol
-                    + ", triggerPrice=" + triggerPrice);
+                    + ", triggerPrice=" + triggerPrice + ", quantity=" + quantity);
         }
 
         NewAlgoOrderResponse data = response.getData();
-        log.info("{} 保护单创建成功: symbol={}, algoId={}, type={}, side={}, triggerPrice={}, status={}",
+        log.info("{} 保护单创建成功: symbol={}, algoId={}, type={}, side={}, quantity={}, triggerPrice={}, status={}",
                 name, symbol, data.getAlgoId(), data.getOrderType(), data.getSide(),
-                data.getTriggerPrice(), data.getAlgoStatus());
+                quantity, data.getTriggerPrice(), data.getAlgoStatus());
         return true;
     }
 
