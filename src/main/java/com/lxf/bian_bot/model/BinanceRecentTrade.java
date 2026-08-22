@@ -26,7 +26,4 @@ public class BinanceRecentTrade {
 
     /** 是否买方为挂单方 */
     private Boolean buyerMaker;
-
-    /** 是否为RPI成交 */
-    private Boolean rpiTrade;
 }
