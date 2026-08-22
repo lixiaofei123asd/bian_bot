@@ -8,20 +8,22 @@ import org.springframework.stereotype.Component;
 @Component
 public class Strategy1 extends BaseStrategy {
 
-    private final IndicatorThreeKLineTrend indicatorThreeKLineTrend = new IndicatorThreeKLineTrend();
+    private final IndicatorThreeKLineTrend indicatorThreeKLineTrend;
+
+    public Strategy1(IndicatorThreeKLineTrend indicatorThreeKLineTrend) {
+        this.indicatorThreeKLineTrend = indicatorThreeKLineTrend;
+    }
 
     @Override
     public String getName() {
         return "STRATEGY1";
     }
 
-    // 获取策略使用的指标
     @Override
     public List<Indicator> getIndicators() {
         return List.of(indicatorThreeKLineTrend);
     }
 
-    // 满足两个指标才触发
     @Override
     public int getRequiredMatchCount() {
         return 1;
