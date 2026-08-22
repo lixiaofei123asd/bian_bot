@@ -65,4 +65,11 @@ public class SymbolRule {
 
     private BigDecimal marketStepSize;
 
+    /**
+     * 交易对允许的最大杠杆
+     *
+     * <p>来源于 Binance /fapi/v1/leverageBracket 第一档 initialLeverage。</p>
+     */
+    private Long maxLeverage;
+
 }

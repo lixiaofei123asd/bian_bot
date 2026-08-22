@@ -1,74 +1,31 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Binance Cache Monitor</title>
-    <style>
-        body { margin: 0; padding: 24px; font-family: Arial, sans-serif; background: #f5f6f8; color: #222; }
-        .container { max-width: 1200px; margin: 0 auto; }
-        h1 { margin-bottom: 8px; }
-        .sub { color: #666; margin-bottom: 20px; }
-        .toolbar { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; }
-        button { padding: 8px 14px; border: 0; border-radius: 6px; cursor: pointer; background: #222; color: #fff; }
-        .time { color: #666; font-size: 13px; }
-        table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; }
-        th, td { padding: 12px 14px; border-bottom: 1px solid #eee; text-align: left; }
-        th { background: #fafafa; }
-        .ok { color: #16803c; font-weight: bold; }
-        .empty { color: #c62828; font-weight: bold; }
-        pre { background: #111; color: #eee; padding: 16px; border-radius: 8px; overflow: auto; max-height: 500px; }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Binance Trading Monitor</title>
+<style>
+*{box-sizing:border-box}body{margin:0;padding:22px;font-family:Arial,"Microsoft YaHei",sans-serif;background:#f4f6f8;color:#1f2937}.container{max-width:1500px;margin:auto}h1{margin:0 0 6px;font-size:26px}.sub{color:#6b7280;margin-bottom:18px}.toolbar{display:flex;gap:10px;align-items:center;margin-bottom:18px;flex-wrap:wrap}button{padding:8px 15px;border:0;border-radius:7px;cursor:pointer;background:#111827;color:#fff}.time{color:#6b7280;font-size:13px}.status{padding:6px 10px;border-radius:20px;font-size:13px;font-weight:bold;background:#e5e7eb}.status.ok{background:#dcfce7;color:#166534}.status.bad{background:#fee2e2;color:#991b1b}.cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:18px}.card{background:#fff;border-radius:12px;padding:17px 18px;box-shadow:0 1px 3px rgba(0,0,0,.07)}.card .label{color:#6b7280;font-size:13px;margin-bottom:8px}.card .value{font-size:24px;font-weight:700}.profit{color:#16803c}.loss{color:#c62828}.section{background:#fff;border-radius:12px;padding:18px;margin-bottom:18px;box-shadow:0 1px 3px rgba(0,0,0,.07)}.section-title{font-size:18px;font-weight:700;margin-bottom:14px}table{width:100%;border-collapse:collapse}th,td{padding:11px 10px;border-bottom:1px solid #edf0f2;text-align:left;font-size:13px}th{background:#fafafa;color:#4b5563}tr:last-child td{border-bottom:0}.empty{text-align:center;color:#9ca3af;padding:25px}.tag{display:inline-block;padding:3px 8px;border-radius:12px;background:#eef2ff;color:#4338ca;font-size:12px}.long{color:#16803c;font-weight:700}.short{color:#c62828;font-weight:700}.ok-text{color:#16803c;font-weight:700}.empty-text{color:#c62828;font-weight:700}.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:18px}.detail{background:#111827;color:#e5e7eb;padding:14px;border-radius:8px;overflow:auto;max-height:260px;font-size:12px}@media(max-width:1100px){.cards{grid-template-columns:repeat(2,1fr)}.grid-2{grid-template-columns:1fr}}@media(max-width:650px){body{padding:12px}.cards{grid-template-columns:1fr}.section{overflow-x:auto}}
+</style>
 </head>
 <body>
 <div class="container">
-    <h1>Binance Cache Monitor</h1>
-    <div class="sub">开发环境专用 · Caffeine KlineCache</div>
-    <div class="toolbar">
-        <button onclick="loadCache()">刷新</button>
-        <span class="time" id="time">--</span>
-    </div>
-    <table>
-        <thead>
-        <tr>
-            <th>Symbol</th>
-            <th>周期</th>
-            <th>缓存数量</th>
-            <th>最新开盘时间</th>
-            <th>最新收盘价</th>
-            <th>状态</th>
-        </tr>
-        </thead>
-        <tbody id="rows"></tbody>
-    </table>
-    <h3>缓存详情</h3>
-    <pre id="detail">点击刷新查看</pre>
+<h1>Binance 交易监控</h1><div class="sub">账户、仓位、委托与 K 线缓存实时监控</div>
+<div class="toolbar"><button onclick="loadAll()">立即刷新</button><span id="streamStatus" class="status">User Data Stream：检查中</span><span id="time" class="time">--</span></div>
+<div class="cards">
+<div class="card"><div class="label">钱包余额</div><div class="value" id="walletBalance">--</div></div><div class="card"><div class="label">可用余额</div><div class="value" id="availableBalance">--</div></div><div class="card"><div class="label">未实现盈亏</div><div class="value" id="unrealizedPnl">--</div></div><div class="card"><div class="label">今日盈亏</div><div class="value" id="todayPnl">--</div></div><div class="card"><div class="label">当前仓位</div><div class="value" id="positionCount">0</div></div><div class="card"><div class="label">当前委托</div><div class="value" id="orderCount">0</div></div><div class="card"><div class="label">保证金余额</div><div class="value" id="marginBalance">--</div></div><div class="card"><div class="label">账户状态</div><div class="value" id="canTrade">--</div></div>
+</div>
+<div class="section"><div class="section-title">当前仓位</div><table><thead><tr><th>交易对</th><th>方向</th><th>数量</th><th>开仓均价</th><th>未实现盈亏</th><th>保证金模式</th><th>持仓方向</th></tr></thead><tbody id="positions"></tbody></table></div>
+<div class="section"><div class="section-title">当前委托</div><table><thead><tr><th>交易对</th><th>订单ID</th><th>方向</th><th>类型</th><th>数量</th><th>价格</th><th>成交数量</th><th>状态</th><th>Reduce Only</th></tr></thead><tbody id="orders"></tbody></table></div>
+<div class="grid-2"><div class="section"><div class="section-title">交易执行状态</div><table><thead><tr><th>交易对</th><th>状态</th></tr></thead><tbody id="executionStates"></tbody></table></div><div class="section"><div class="section-title">K线缓存状态</div><table><thead><tr><th>Symbol</th><th>周期</th><th>缓存数量</th><th>最新收盘价</th><th>状态</th></tr></thead><tbody id="cacheRows"></tbody></table></div></div>
+<div class="section"><div class="section-title">缓存详情</div><pre class="detail" id="detail">点击刷新查看</pre></div>
 </div>
 <script>
-    async function loadCache() {
-        const response = await fetch('/api/cache/kline');
-        const data = await response.json();
-        const rows = document.getElementById('rows');
-        rows.innerHTML = '';
-        Object.entries(data.symbols).forEach(([symbol, value]) => {
-            const latest = value.latest;
-            const row = document.createElement('tr');
-            row.innerHTML = `
-                <td>${symbol}</td>
-                <td>${value.interval}</td>
-                <td>${value.size}</td>
-                <td>${latest ? latest.openTime : '-'}</td>
-                <td>${latest ? latest.closePrice : '-'}</td>
-                <td class="${value.size > 0 ? 'ok' : 'empty'}">${value.size > 0 ? '正常' : '无数据'}</td>
-            `;
-            rows.appendChild(row);
-        });
-        document.getElementById('detail').textContent = JSON.stringify(data, null, 2);
-        document.getElementById('time').textContent = '最后刷新：' + new Date().toLocaleString();
-    }
-
-    loadCache();
-    setInterval(loadCache, 5000);
+const fmt=(v,d=8)=>v==null||Number.isNaN(Number(v))?'--':Number(v).toLocaleString('zh-CN',{maximumFractionDigits:d});
+const pnlHtml=v=>{const n=Number(v||0),c=n>0?'profit':n<0?'loss':'';return `<span class="${c}">${n>0?'+':''}${fmt(n,8)}</span>`};
+const emptyRow=(n,t='暂无数据')=>`<tr><td colspan="${n}" class="empty">${t}</td></tr>`;
+async function loadTradingState(){const r=await fetch('/api/monitor/state',{cache:'no-store'});if(!r.ok)throw Error(r.status);const d=await r.json(),a=d.account;document.getElementById('walletBalance').textContent=a?fmt(a.totalWalletBalance,8):'--';document.getElementById('availableBalance').textContent=a?fmt(a.availableBalance,8):'--';document.getElementById('marginBalance').textContent=a?fmt(a.totalMarginBalance,8):'--';document.getElementById('unrealizedPnl').innerHTML=a?pnlHtml(a.totalUnrealizedProfit):'--';document.getElementById('todayPnl').innerHTML=pnlHtml(d.todayRealizedPnl);document.getElementById('canTrade').innerHTML=a?(a.canTrade?'<span class="profit">可交易</span>':'<span class="loss">不可交易</span>'):'--';const ps=(d.positions||[]).filter(p=>Math.abs(Number(p.positionAmt||0))>1e-8);document.getElementById('positionCount').textContent=ps.length;document.getElementById('positions').innerHTML=ps.length?ps.map(p=>{const n=Number(p.positionAmt||0);return `<tr><td><b>${p.symbol||'-'}</b></td><td class="${n>0?'long':'short'}">${n>0?'LONG':'SHORT'}</td><td>${fmt(Math.abs(n),8)}</td><td>${fmt(p.entryPrice,8)}</td><td>${pnlHtml(p.unrealizedProfit)}</td><td>${p.marginType||'-'}</td><td>${p.positionSide||'-'}</td></tr>`}).join(''):emptyRow(7,'当前无持仓');const os=d.orders||[];document.getElementById('orderCount').textContent=os.length;document.getElementById('orders').innerHTML=os.length?os.map(o=>`<tr><td><b>${o.symbol||'-'}</b></td><td>${o.orderId||'-'}</td><td class="${o.side==='BUY'?'long':'short'}">${o.side||'-'}</td><td><span class="tag">${o.type||'-'}</span></td><td>${fmt(o.origQty,8)}</td><td>${fmt(o.price,8)}</td><td>${fmt(o.executedQty,8)}</td><td>${o.status||'-'}</td><td>${o.reduceOnly?'是':'否'}</td></tr>`).join(''):emptyRow(9,'当前无委托');const es=Object.entries(d.executionStates||{});document.getElementById('executionStates').innerHTML=es.length?es.map(([s,v])=>`<tr><td>${s}</td><td><span class="tag">${v}</span></td></tr>`).join(''):emptyRow(2,'暂无交易状态');document.getElementById('streamStatus').textContent='User Data Stream：已连接';document.getElementById('streamStatus').className='status ok'}
+async function loadCache(){try{const r=await fetch('/api/cache/kline',{cache:'no-store'});if(!r.ok)throw Error(r.status);const d=await r.json(),s=d.symbols||{};document.getElementById('cacheRows').innerHTML=Object.entries(s).length?Object.entries(s).map(([k,v])=>`<tr><td>${k}</td><td>${v.interval||'-'}</td><td>${v.size??0}</td><td>${v.latest?v.latest.closePrice:'-'}</td><td class="${v.size>0?'ok-text':'empty-text'}">${v.size>0?'正常':'无数据'}</td></tr>`).join(''):emptyRow(5,'暂无缓存');document.getElementById('detail').textContent=JSON.stringify(d,null,2)}catch(e){document.getElementById('cacheRows').innerHTML=emptyRow(5,'缓存接口暂不可用')}}
+async function loadAll(){try{await loadTradingState()}catch(e){document.getElementById('streamStatus').textContent='User Data Stream：状态获取失败';document.getElementById('streamStatus').className='status bad'}await loadCache();document.getElementById('time').textContent='最后刷新：'+new Date().toLocaleString()}loadAll();setInterval(loadAll,3000);
 </script>
-</body>
-</html>
+</body></html>
