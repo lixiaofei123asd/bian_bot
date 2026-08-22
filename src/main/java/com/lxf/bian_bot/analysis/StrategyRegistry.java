@@ -4,8 +4,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.InitializingBean;
+import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.ClassPathScanningCandidateComponentProvider;
 import org.springframework.core.type.filter.AssignableTypeFilter;
 import org.springframework.stereotype.Component;
@@ -16,16 +16,20 @@ public class StrategyRegistry implements InitializingBean {
 
     private static final String STRATEGY_PACKAGE = "com.lxf.bian_bot.analysis.strategy";
 
+    private final ApplicationContext applicationContext;
     private Map<String, Strategy> strategies = Map.of();
+
+    public StrategyRegistry(ApplicationContext applicationContext) {
+        this.applicationContext = applicationContext;
+    }
 
     @Override
     public void afterPropertiesSet() {
-        // 程序启动时扫描strategy包，自动实例化所有Strategy实现类
         ClassPathScanningCandidateComponentProvider scanner = new ClassPathScanningCandidateComponentProvider(false);
         scanner.addIncludeFilter(new AssignableTypeFilter(Strategy.class));
 
         this.strategies = scanner.findCandidateComponents(STRATEGY_PACKAGE).stream()
-                .map(beanDefinition -> instantiateStrategy(beanDefinition.getBeanClassName()))
+                .map(beanDefinition -> applicationContext.getBean(loadStrategyClass(beanDefinition.getBeanClassName())))
                 .collect(Collectors.toUnmodifiableMap(
                         strategy -> strategy.getClass().getSimpleName().toUpperCase(Locale.ROOT),
                         strategy -> strategy));
@@ -44,10 +48,10 @@ public class StrategyRegistry implements InitializingBean {
         return getStrategy(strategyName) != null;
     }
 
-    // 根据类名实例化Strategy实现类
-    private Strategy instantiateStrategy(String className) {
+    @SuppressWarnings("unchecked")
+    private Class<? extends Strategy> loadStrategyClass(String className) {
         try {
-            return BeanUtils.instantiateClass(Class.forName(className).asSubclass(Strategy.class));
+            return (Class<? extends Strategy>) Class.forName(className);
         } catch (ClassNotFoundException e) {
             throw new IllegalStateException("无法加载Strategy: " + className, e);
         }
