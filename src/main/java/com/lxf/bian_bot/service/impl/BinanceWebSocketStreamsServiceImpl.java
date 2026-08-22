@@ -2,11 +2,15 @@ package com.lxf.bian_bot.service.impl;
 
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.Interval;
 import com.lxf.bian_bot.cache.KlineCache;
+import com.lxf.bian_bot.cache.SecondKlineAggregator;
+import com.lxf.bian_bot.cache.SecondKlineCache;
 import com.lxf.bian_bot.cache.TickerCache;
 import com.lxf.bian_bot.config.BinanceProperties;
 import com.lxf.bian_bot.config.SymbolRuleCache;
+import com.lxf.bian_bot.model.BinanceAggTrade;
 import com.lxf.bian_bot.model.BinanceBookTicker;
 import com.lxf.bian_bot.model.BinanceKline;
+import com.lxf.bian_bot.model.BinanceSecondKline;
 import com.lxf.bian_bot.service.BinanceMarketService;
 import com.lxf.bian_bot.service.BinanceWebSocketStreamsService;
 import com.lxf.bian_bot.websocket.BinanceWebSocketStreamsClient;
@@ -30,18 +34,31 @@ public class BinanceWebSocketStreamsServiceImpl implements BinanceWebSocketStrea
     private final SymbolRuleCache symbolRuleCache;
     private final TickerCache tickerCache;
     private final KlineCache klineCache;
+    private final SecondKlineAggregator secondKlineAggregator;
+    private final SecondKlineCache secondKlineCache;
     private final List<Consumer<BinanceBookTicker>> bookTickerListeners = new CopyOnWriteArrayList<>();
     private final List<Consumer<BinanceKline>> klineListeners = new CopyOnWriteArrayList<>();
 
-    public BinanceWebSocketStreamsServiceImpl(BinanceWebSocketStreamsClient webSocketClient, BinanceProperties properties, BinanceMarketService marketService, SymbolRuleCache symbolRuleCache, TickerCache tickerCache, KlineCache klineCache) {
+    public BinanceWebSocketStreamsServiceImpl(
+            BinanceWebSocketStreamsClient webSocketClient,
+            BinanceProperties properties,
+            BinanceMarketService marketService,
+            SymbolRuleCache symbolRuleCache,
+            TickerCache tickerCache,
+            KlineCache klineCache,
+            SecondKlineAggregator secondKlineAggregator,
+            SecondKlineCache secondKlineCache) {
         this.webSocketClient = webSocketClient;
         this.properties = properties;
         this.marketService = marketService;
         this.symbolRuleCache = symbolRuleCache;
         this.tickerCache = tickerCache;
         this.klineCache = klineCache;
+        this.secondKlineAggregator = secondKlineAggregator;
+        this.secondKlineCache = secondKlineCache;
         this.webSocketClient.setBookTickerListener(this::handleBookTicker);
         this.webSocketClient.setKlineListener(this::handleKline);
+        this.webSocketClient.setAggTradeListener(this::handleAggTrade);
     }
 
     @PostConstruct
@@ -51,7 +68,9 @@ public class BinanceWebSocketStreamsServiceImpl implements BinanceWebSocketStrea
         webSocketClient.connect();
         webSocketClient.subscribeBookTicker(symbols);
         webSocketClient.subscribeKline(symbols, KLINE_INTERVAL);
+        webSocketClient.subscribeAggTrade(symbols);
         log.info("Binance WebSocket Streams 启动完成，订阅交易对: {}", symbols);
+        log.info("1秒K线缓存已启用，数据来源: Binance aggTrade Stream");
     }
 
     @Override
@@ -59,9 +78,6 @@ public class BinanceWebSocketStreamsServiceImpl implements BinanceWebSocketStrea
         webSocketClient.connect();
     }
 
-    /**
-     * 单币种订阅
-     */
     @Override
     public void subscribeBookTicker(String symbol) {
         if (!isValidSymbol(symbol)) {
@@ -71,49 +87,46 @@ public class BinanceWebSocketStreamsServiceImpl implements BinanceWebSocketStrea
         webSocketClient.subscribeBookTicker(symbol);
     }
 
-    /**
-     * 多币种订阅
-     */
     @Override
     public void subscribeBookTicker(List<String> symbols) {
         webSocketClient.subscribeBookTicker(symbolRuleCache.filterValidSymbols(symbols));
     }
 
-    /**
-     * 取消订阅
-     */
     @Override
     public void unsubscribeBookTicker(String symbol) {
         webSocketClient.unsubscribeBookTicker(symbol);
     }
 
-    /**
-     * 订阅K线
-     */
     @Override
     public void subscribeKline(List<String> symbols, String interval) {
         webSocketClient.subscribeKline(symbolRuleCache.filterValidSymbols(symbols), interval);
     }
 
-    /**
-     * 获取当前订阅
-     */
+    @Override
+    public void subscribeAggTrade(List<String> symbols) {
+        webSocketClient.subscribeAggTrade(symbolRuleCache.filterValidSymbols(symbols));
+    }
+
+    @Override
+    public List<BinanceSecondKline> getRecentSecondKlines(String symbol, int limit) {
+        return secondKlineCache.getRecent(symbol, limit);
+    }
+
+    @Override
+    public List<BinanceSecondKline> getRecentSecondKlinesIncludingCurrent(String symbol, int limit) {
+        return secondKlineCache.getRecentIncludingCurrent(symbol, limit);
+    }
+
     @Override
     public Set<String> getSubscribedSymbols() {
         return webSocketClient.getSubscribedSymbols();
     }
 
-    /**
-     * 添加行情监听器
-     */
     @Override
     public void addBookTickerListener(Consumer<BinanceBookTicker> listener) {
         bookTickerListeners.add(listener);
     }
 
-    /**
-     * 添加K线监听器
-     */
     @Override
     public void addKlineListener(Consumer<BinanceKline> listener) {
         klineListeners.add(listener);
@@ -129,9 +142,6 @@ public class BinanceWebSocketStreamsServiceImpl implements BinanceWebSocketStrea
         webSocketClient.close();
     }
 
-    /**
-     * 初始化K线缓存
-     */
     private void initializeKlineCache(List<String> symbols) {
         log.info("========================================");
         log.info("开始初始化 Binance K线缓存");
@@ -147,9 +157,6 @@ public class BinanceWebSocketStreamsServiceImpl implements BinanceWebSocketStrea
         }
     }
 
-    /**
-     * 获取配置中有效的交易对
-     */
     private List<String> getValidSymbols() {
         List<String> configuredSymbols = properties.getSymbols();
         List<String> validSymbols = symbolRuleCache.filterValidSymbols(configuredSymbols);
@@ -169,13 +176,8 @@ public class BinanceWebSocketStreamsServiceImpl implements BinanceWebSocketStrea
         return symbol != null && symbolRuleCache.get(symbol.toUpperCase()) != null;
     }
 
-    /**
-     * Binance行情处理
-     */
     private void handleBookTicker(BinanceBookTicker ticker) {
-        if (ticker == null) {
-            return;
-        }
+        if (ticker == null) return;
         tickerCache.update(ticker);
         for (Consumer<BinanceBookTicker> listener : bookTickerListeners) {
             try {
@@ -186,13 +188,8 @@ public class BinanceWebSocketStreamsServiceImpl implements BinanceWebSocketStrea
         }
     }
 
-    /**
-     * Binance K线处理
-     */
     private void handleKline(BinanceKline kline) {
-        if (kline == null || kline.getSymbol() == null) {
-            return;
-        }
+        if (kline == null || kline.getSymbol() == null) return;
         klineCache.update(kline.getSymbol(), KLINE_INTERVAL, kline, KLINE_CACHE_SIZE);
         log.debug("Binance K线缓存更新: symbol={}, openTime={}, closePrice={}", kline.getSymbol(), kline.getOpenTime(), kline.getClosePrice());
         for (Consumer<BinanceKline> listener : klineListeners) {
@@ -202,5 +199,15 @@ public class BinanceWebSocketStreamsServiceImpl implements BinanceWebSocketStrea
                 log.error("Kline Listener 执行异常", e);
             }
         }
+    }
+
+    /**
+     * Binance aggTrade -> 本地 1 秒 K线。
+     */
+    private void handleAggTrade(BinanceAggTrade trade) {
+        if (trade == null || trade.getSymbol() == null) return;
+        secondKlineAggregator.accept(trade);
+        log.trace("1秒K线成交更新: symbol={}, price={}, quantity={}, tradeTime={}",
+                trade.getSymbol(), trade.getPrice(), trade.getQuantity(), trade.getTradeTime());
     }
 }
