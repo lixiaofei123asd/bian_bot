@@ -1,21 +1,33 @@
 package com.lxf.bian_bot.analysis.indicator;
 
 import com.lxf.bian_bot.analysis.Indicator;
+import com.lxf.bian_bot.analysis.MarketDataProvider;
 import com.lxf.bian_bot.analysis.enums.IndicatorSignal;
 import com.lxf.bian_bot.model.BinanceKline;
+import org.springframework.stereotype.Component;
+
 import java.util.List;
 
+@Component
 public class IndicatorKLine implements Indicator {
 
-    // 获取指标名称
+    private final MarketDataProvider marketDataProvider;
+
+    public IndicatorKLine(MarketDataProvider marketDataProvider) {
+        this.marketDataProvider = marketDataProvider;
+    }
+
     @Override
     public String getName() {
         return "KLINE";
     }
 
-    // 根据最新K线判断涨跌方向
+    /**
+     * 根据最新 K 线判断涨跌方向。
+     */
     @Override
-    public IndicatorSignal calculate(List<BinanceKline> klines) {
+    public IndicatorSignal calculate(String symbol) {
+        List<BinanceKline> klines = marketDataProvider.getKlines(symbol, "1m", 1);
         if (klines == null || klines.isEmpty()) {
             return IndicatorSignal.NEUTRAL;
         }
