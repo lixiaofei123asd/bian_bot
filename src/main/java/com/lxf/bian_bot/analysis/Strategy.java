@@ -1,7 +1,6 @@
 package com.lxf.bian_bot.analysis;
 
 import com.lxf.bian_bot.analysis.enums.TradingSignal;
-import com.lxf.bian_bot.model.BinanceKline;
 import java.util.List;
 
 public interface Strategy {
@@ -15,6 +14,6 @@ public interface Strategy {
     // 获取满足条件的数量
     int getRequiredMatchCount();
 
-    // 执行策略
-    TradingSignal execute(List<BinanceKline> klines);
+    // 执行策略，策略内部的指标自行获取市场数据
+    TradingSignal execute(String symbol);
 }
