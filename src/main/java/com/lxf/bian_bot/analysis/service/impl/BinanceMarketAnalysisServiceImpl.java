@@ -5,7 +5,7 @@ import com.lxf.bian_bot.analysis.StrategyRegistry;
 import com.lxf.bian_bot.analysis.enums.TradingSignal;
 import com.lxf.bian_bot.analysis.service.BinanceMarketAnalysisService;
 import com.lxf.bian_bot.cache.KlineCache;
-import com.lxf.bian_bot.config.StrategyConfig;
+import com.lxf.bian_bot.config.model.StrategyConfig;
 import com.lxf.bian_bot.model.BinanceKline;
 import com.lxf.bian_bot.model.TradingDecision;
 import java.math.BigDecimal;
@@ -34,7 +34,6 @@ public class BinanceMarketAnalysisServiceImpl implements BinanceMarketAnalysisSe
     public TradingDecision analyze(String symbol) {
         log.info("========== 开始市场分析 {} ==========", symbol);
 
-        // 从本地K线缓存获取数据
         List<BinanceKline> klines = klineCache.get(symbol, KLINE_INTERVAL);
         log.debug("从 KlineCache 获取 K线: symbol={}, interval={}, size={}", symbol, KLINE_INTERVAL, klines.size());
 
@@ -45,11 +44,9 @@ public class BinanceMarketAnalysisServiceImpl implements BinanceMarketAnalysisSe
 
         BigDecimal currentPrice = klines.getLast().getClosePrice();
 
-        // 根据币种获取唯一策略
         String strategyName = strategyConfig.getStrategyName(symbol);
         Strategy strategy = strategyRegistry.getStrategy(strategyName);
 
-        // 同一个币种只执行配置的一个策略
         TradingSignal signal = strategy.execute(klines);
         TradingDecision decision = buildDecision(symbol, currentPrice, signal, strategyName);
 
@@ -57,7 +54,6 @@ public class BinanceMarketAnalysisServiceImpl implements BinanceMarketAnalysisSe
         return decision;
     }
 
-    // 创建WAIT决策
     private TradingDecision buildWaitDecision(String symbol) {
         return TradingDecision.builder()
                 .symbol(symbol)
@@ -67,7 +63,6 @@ public class BinanceMarketAnalysisServiceImpl implements BinanceMarketAnalysisSe
                 .build();
     }
 
-    // 将策略信号转换为最终交易决策
     private TradingDecision buildDecision(String symbol, BigDecimal currentPrice, TradingSignal signal, String strategyName) {
         TradingDecision.DecisionType decisionType = switch (signal) {
             case LONG -> TradingDecision.DecisionType.ENTER_LONG;

@@ -122,3 +122,4 @@ public class BinanceMarketServiceImpl implements BinanceMarketService {
         return new ArrayList<>(klines.subList(klines.size() - limit.intValue(), klines.size()));
     }
 }
+

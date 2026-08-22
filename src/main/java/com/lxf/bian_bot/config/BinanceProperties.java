@@ -16,6 +16,9 @@ public class BinanceProperties {
     private String webSocketApiUrl;
     private String symbol;
 
+    /** Binance WebSocket Streams 配置。 */
+    private Streams streams = new Streams();
+
     public List<String> getSymbols() {
         if (symbol == null || symbol.isBlank()) {
             return List.of();
@@ -24,5 +27,21 @@ public class BinanceProperties {
                 .map(String::trim)
                 .filter(s -> !s.isEmpty())
                 .toList();
+    }
+
+    @Data
+    public static class Streams {
+
+        /** 是否使用代理。 */
+        private boolean proxyEnabled;
+
+        /** 代理主机。 */
+        private String proxyHost;
+
+        /** 代理端口。 */
+        private int proxyPort;
+
+        /** Binance WebSocket Streams 地址。 */
+        private String webSocketStreamsUrl;
     }
 }
