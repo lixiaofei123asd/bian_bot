@@ -4,8 +4,20 @@ import com.binance.connector.client.common.ApiResponse;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.api.DerivativesTradingUsdsFuturesRestApi;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.Interval;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.KlineCandlestickDataResponse;
+import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.MarkPriceResponse1;
+import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.RecentTradesListResponse;
+import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.SymbolOrderBookTickerResponse1;
+import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.SymbolPriceTickerV2Response1;
+import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.Ticker24hrPriceChangeStatisticsResponse1;
 import com.lxf.bian_bot.cache.KlineCache;
+import com.lxf.bian_bot.model.Binance24hTicker;
+import com.lxf.bian_bot.model.BinanceBookTicker;
 import com.lxf.bian_bot.model.BinanceKline;
+import com.lxf.bian_bot.model.BinanceMarkPrice;
+import com.lxf.bian_bot.model.BinanceOrderBook;
+import com.lxf.bian_bot.model.BinanceOrderBookLevel;
+import com.lxf.bian_bot.model.BinancePriceTicker;
+import com.lxf.bian_bot.model.BinanceRecentTrade;
 import com.lxf.bian_bot.service.BinanceMarketService;
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -36,10 +48,114 @@ public class BinanceMarketServiceImpl implements BinanceMarketService {
         }
 
         log.info("获取 Binance K线: symbol={}, interval={}, limit={}", symbol, interval, limit);
-        ApiResponse<KlineCandlestickDataResponse> response = api.klineCandlestickData(symbol, interval, null, null, limit);
+        ApiResponse<KlineCandlestickDataResponse> response =
+                api.klineCandlestickData(symbol, interval, null, null, limit);
         List<BinanceKline> klines = parseKlines(response.getData(), symbol);
         klineCache.put(symbol, cacheInterval, klines);
         return klines;
+    }
+
+    @Override
+    public BinancePriceTicker getPrice(String symbol) {
+        SymbolPriceTickerV2Response1 data = api.symbolPriceTickerV2(symbol).getData().getSymbolPriceTickerV2Response1();
+
+        BinancePriceTicker result = new BinancePriceTicker();
+        result.setSymbol(data.getSymbol());
+        result.setPrice(toBigDecimal(data.getPrice()));
+        result.setTime(data.getTime());
+        return result;
+    }
+
+    @Override
+    public BinanceMarkPrice getMarkPrice(String symbol) {
+        MarkPriceResponse1 data = api.markPrice(symbol).getData().getMarkPriceResponse1();
+
+        BinanceMarkPrice result = new BinanceMarkPrice();
+        result.setSymbol(data.getSymbol());
+        result.setMarkPrice(toBigDecimal(data.getMarkPrice()));
+        result.setIndexPrice(toBigDecimal(data.getIndexPrice()));
+        result.setEstimatedSettlePrice(toBigDecimal(data.getEstimatedSettlePrice()));
+        result.setLastFundingRate(toBigDecimal(data.getLastFundingRate()));
+        result.setInterestRate(toBigDecimal(data.getInterestRate()));
+        result.setNextFundingTime(data.getNextFundingTime());
+        result.setTime(data.getTime());
+        return result;
+    }
+
+    @Override
+    public Binance24hTicker get24hTicker(String symbol) {
+        Ticker24hrPriceChangeStatisticsResponse1 data =
+                api.ticker24hrPriceChangeStatistics(symbol).getData().getTicker24hrPriceChangeStatisticsResponse1();
+
+        Binance24hTicker result = new Binance24hTicker();
+        result.setSymbol(data.getSymbol());
+        result.setPriceChange(toBigDecimal(data.getPriceChange()));
+        result.setPriceChangePercent(toBigDecimal(data.getPriceChangePercent()));
+        result.setWeightedAvgPrice(toBigDecimal(data.getWeightedAvgPrice()));
+        result.setLastPrice(toBigDecimal(data.getLastPrice()));
+        result.setLastQty(toBigDecimal(data.getLastQty()));
+        result.setOpenPrice(toBigDecimal(data.getOpenPrice()));
+        result.setHighPrice(toBigDecimal(data.getHighPrice()));
+        result.setLowPrice(toBigDecimal(data.getLowPrice()));
+        result.setVolume(toBigDecimal(data.getVolume()));
+        result.setQuoteVolume(toBigDecimal(data.getQuoteVolume()));
+        result.setOpenTime(data.getOpenTime());
+        result.setCloseTime(data.getCloseTime());
+        result.setFirstId(data.getFirstId());
+        result.setLastId(data.getLastId());
+        result.setCount(data.getCount());
+        return result;
+    }
+
+    @Override
+    public BinanceBookTicker getBookTicker(String symbol) {
+        SymbolOrderBookTickerResponse1 data =
+                api.symbolOrderBookTicker(symbol).getData().getSymbolOrderBookTickerResponse1();
+
+        BinanceBookTicker result = new BinanceBookTicker();
+        result.setSymbol(data.getSymbol());
+        result.setBidPrice(toBigDecimal(data.getBidPrice()));
+        result.setBidQuantity(toBigDecimal(data.getBidQty()));
+        result.setAskPrice(toBigDecimal(data.getAskPrice()));
+        result.setAskQuantity(toBigDecimal(data.getAskQty()));
+        result.setEventTime(data.getTime());
+        return result;
+    }
+
+    @Override
+    public BinanceOrderBook getOrderBook(String symbol, Long limit) {
+        ApiResponse<com.binance.connector.client.derivatives_trading_usds_futures.rest.model.OrderBookResponse> response =
+                api.orderBook(symbol, limit);
+        com.binance.connector.client.derivatives_trading_usds_futures.rest.model.OrderBookResponse data = response.getData();
+
+        BinanceOrderBook result = new BinanceOrderBook();
+        result.setLastUpdateId(data.getLastUpdateId());
+        result.setEventTime(data.getE());
+        result.setTransactionTime(data.getT());
+        result.setBids(parseOrderBookLevels(data.getBids()));
+        result.setAsks(parseOrderBookLevels(data.getAsks()));
+        return result;
+    }
+
+    @Override
+    public List<BinanceRecentTrade> getRecentTrades(String symbol, Long limit) {
+        RecentTradesListResponse data = api.recentTradesList(symbol, limit).getData();
+        if (data == null || data.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<BinanceRecentTrade> result = new ArrayList<>(data.size());
+        data.forEach(item -> {
+            BinanceRecentTrade trade = new BinanceRecentTrade();
+            trade.setId(item.getId());
+            trade.setPrice(toBigDecimal(item.getPrice()));
+            trade.setQuantity(toBigDecimal(item.getQty()));
+            trade.setQuoteQuantity(toBigDecimal(item.getQuoteQty()));
+            trade.setTime(item.getTime());
+            trade.setBuyerMaker(item.getIsBuyerMaker());
+            result.add(trade);
+        });
+        return result;
     }
 
     private List<BinanceKline> parseKlines(KlineCandlestickDataResponse response, String symbol) {
@@ -68,6 +184,23 @@ public class BinanceMarketServiceImpl implements BinanceMarketService {
 
         log.info("Binance K线解析完成: {} 条", result.size());
         return result;
+    }
+
+    private List<BinanceOrderBookLevel> parseOrderBookLevels(List<List<String>> levels) {
+        if (levels == null || levels.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<BinanceOrderBookLevel> result = new ArrayList<>(levels.size());
+        levels.forEach(level -> result.add(
+                new BinanceOrderBookLevel(
+                        new BigDecimal(level.get(0)),
+                        new BigDecimal(level.get(1)))));
+        return result;
+    }
+
+    private BigDecimal toBigDecimal(String value) {
+        return value == null ? null : new BigDecimal(value);
     }
 
     private List<BinanceKline> getLatestKlines(List<BinanceKline> klines, Long limit) {
