@@ -7,7 +7,9 @@ spring:
 logging:
   level:
     root: INFO
-
+scheduling:
+  task:
+    cron: "0/10 * * * * ?"
 # ==================== 交易配置 ====================
 trading:
   # 是否允许交易信号真正发送订单
@@ -24,13 +26,13 @@ trading:
   # 是否启用止盈止损
   take-profit-stop-loss-enabled: true
   # 止盈金额，单位：USDT
-  take-profit-amount: 0.01
+  take-profit-amount: 0.2
   # 止损金额，单位：USDT
-  stop-loss-amount: 0.02
+  stop-loss-amount: 0.2
   # 保证金模式：
   # ISOLATED = 逐仓
   # CROSSED  = 全仓
-  margin-type: ISOLATED
+  margin-type: CROSSED
   # 是否使用交易对允许的最大杠杆
   # true  = 自动使用该交易对最大杠杆，下面的 leverage 配置失效
   # false = 使用下面 leverage 配置的杠杆

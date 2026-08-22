@@ -1,20 +1,16 @@
 package com.lxf.bian_bot.analysis.strategy;
 
 import com.lxf.bian_bot.analysis.Indicator;
-import com.lxf.bian_bot.analysis.indicator.IndicatorContinuous;
-import com.lxf.bian_bot.analysis.indicator.IndicatorMa25;
 import java.util.List;
 import org.springframework.stereotype.Component;
 
 @Component
 public class Strategy2 extends BaseStrategy {
 
-    private final IndicatorMa25 ma25;
-    private final IndicatorContinuous continuous;
+    // TODO 暂时空，现在只用策略1
 
-    public Strategy2(IndicatorMa25 ma25, IndicatorContinuous continuous) {
-        this.ma25 = ma25;
-        this.continuous = continuous;
+    public Strategy2() {
+
     }
 
     @Override
@@ -24,11 +20,11 @@ public class Strategy2 extends BaseStrategy {
 
     @Override
     public List<Indicator> getIndicators() {
-        return List.of(ma25, continuous);
+        return List.of();
     }
 
     @Override
     public int getRequiredMatchCount() {
-        return 2;
+        return 1;
     }
 }

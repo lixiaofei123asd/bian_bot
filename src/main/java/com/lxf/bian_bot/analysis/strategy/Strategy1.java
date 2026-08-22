@@ -1,17 +1,17 @@
 package com.lxf.bian_bot.analysis.strategy;
 
 import com.lxf.bian_bot.analysis.Indicator;
-import com.lxf.bian_bot.analysis.indicator.IndicatorThreeKLineTrend;
+import com.lxf.bian_bot.analysis.indicator.IndicatorSecondKlineTrend;
 import java.util.List;
 import org.springframework.stereotype.Component;
 
 @Component
 public class Strategy1 extends BaseStrategy {
 
-    private final IndicatorThreeKLineTrend indicatorThreeKLineTrend;
+    private final IndicatorSecondKlineTrend trend;
 
-    public Strategy1(IndicatorThreeKLineTrend indicatorThreeKLineTrend) {
-        this.indicatorThreeKLineTrend = indicatorThreeKLineTrend;
+    public Strategy1(IndicatorSecondKlineTrend trend) {
+        this.trend = trend;
     }
 
     @Override
@@ -21,7 +21,7 @@ public class Strategy1 extends BaseStrategy {
 
     @Override
     public List<Indicator> getIndicators() {
-        return List.of(indicatorThreeKLineTrend);
+        return List.of(trend);
     }
 
     @Override

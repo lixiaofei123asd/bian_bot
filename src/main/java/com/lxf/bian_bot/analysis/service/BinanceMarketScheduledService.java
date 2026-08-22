@@ -29,7 +29,7 @@ public class BinanceMarketScheduledService {
     }
 
     // 每10秒执行一次所有币种的市场分析和交易执行
-    @Scheduled(fixedDelay = 10000)
+    @Scheduled(cron = "${scheduling.task.cron}")
     public void scheduledAnalysis() {
         if (!webSocketStreamsService.isConnected()) {
             log.debug("WebSocket 尚未连接，跳过本次分析");
