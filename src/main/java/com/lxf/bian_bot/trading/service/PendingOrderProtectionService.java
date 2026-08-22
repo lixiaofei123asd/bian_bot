@@ -3,13 +3,11 @@ package com.lxf.bian_bot.trading.service;
 import com.binance.connector.client.common.ApiException;
 import com.binance.connector.client.common.ApiResponse;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.api.DerivativesTradingUsdsFuturesRestApi;
-import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.AlgoType;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.NewAlgoOrderRequest;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.NewAlgoOrderResponse;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.NewOrderRequest;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.NewOrderRespType;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.QueryOrderResponse;
-import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.ReduceOnly;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.Side;
 import com.lxf.bian_bot.model.OrderType;
 import com.lxf.bian_bot.trading.order.OrderParameterCalculator;
@@ -20,7 +18,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
-/** 监控限价开仓单，并在产生成交后创建 TP/SL 保护单。 */
+/** 监控限价开仓单，并在产生成交后创建仓位级 TP/SL 保护单。 */
 @Slf4j
 @Service
 public class PendingOrderProtectionService {
@@ -165,9 +163,9 @@ public class PendingOrderProtectionService {
 
     private void createProtectionOrders(PendingProtection pending, double quantity, double entryPrice) {
         String symbol = pending.symbol;
-        Side side = pending.side;
+        Side openSide = pending.side;
 
-        entryPrice = orderParameterCalculator.normalizeEntryPrice(symbol, entryPrice, Side.BUY.equals(side));
+        entryPrice = orderParameterCalculator.normalizeEntryPrice(symbol, entryPrice, Side.BUY.equals(openSide));
         quantity = orderParameterCalculator.normalizeLimitQuantity(symbol, quantity, entryPrice);
         if (quantity <= 0) {
             throw new IllegalStateException("成交数量经过交易规则修正后无效: symbol=" + symbol + ", quantity=" + quantity);
@@ -175,7 +173,7 @@ public class PendingOrderProtectionService {
 
         double tp;
         double sl;
-        if (side == Side.BUY) {
+        if (openSide == Side.BUY) {
             tp = entryPrice + pending.profitAmount / quantity;
             sl = entryPrice - pending.lossAmount / quantity;
         } else {
@@ -183,13 +181,16 @@ public class PendingOrderProtectionService {
             sl = entryPrice + pending.lossAmount / quantity;
         }
 
-        tp = orderParameterCalculator.normalizeTriggerPrice(symbol, tp, side, true);
-        sl = orderParameterCalculator.normalizeTriggerPrice(symbol, sl, side, false);
-        Side closeSide = side == Side.BUY ? Side.SELL : Side.BUY;
+        tp = orderParameterCalculator.normalizeTriggerPrice(symbol, tp, openSide, true);
+        sl = orderParameterCalculator.normalizeTriggerPrice(symbol, sl, openSide, false);
 
-        log.info("========== 开仓已产生成交，创建止盈止损 ==========");
+        // 保护单的平仓方向始终与开仓方向相反。
+        Side closeSide = openSide == Side.BUY ? Side.SELL : Side.BUY;
+
+        log.info("========== 开仓已产生成交，创建仓位级止盈止损 ==========");
         log.info("交易对：{}", symbol);
-        log.info("开仓方向：{}", side);
+        log.info("开仓方向：{}", openSide);
+        log.info("平仓方向：{}", closeSide);
         log.info("实际成交数量：{}", quantity);
         log.info("实际成交价格：{}", entryPrice);
         log.info("止盈价格：{}", tp);
@@ -198,15 +199,15 @@ public class PendingOrderProtectionService {
         try {
             if (!pending.slCreated) {
                 pending.slCreated = createProtectionAlgoOrder(
-                        symbol, closeSide, OrderType.STOP_MARKET, sl, quantity, "SL");
+                        symbol, closeSide, OrderType.STOP_MARKET, sl, "SL");
             }
             if (!pending.tpCreated) {
                 pending.tpCreated = createProtectionAlgoOrder(
-                        symbol, closeSide, OrderType.TAKE_PROFIT_MARKET, tp, quantity, "TP");
+                        symbol, closeSide, OrderType.TAKE_PROFIT_MARKET, tp, "TP");
             }
         } catch (ApiException e) {
             if (isImmediateTriggerException(e)) {
-                closeImmediatelyAfterProtectionTrigger(pending, side, quantity, tp, sl);
+                closeImmediatelyAfterProtectionTrigger(pending, openSide, quantity, tp, sl);
                 return;
             }
             throw e;
@@ -219,8 +220,7 @@ public class PendingOrderProtectionService {
 
     /**
      * TP/SL 创建时如果 Binance 判断订单会立即触发，则说明当前价格已经越过保护价格。
-     * 这里直接使用当前类持有的 Binance API 创建 reduceOnly 市价平仓单，
-     * 不依赖 BinanceTradeService，避免形成循环依赖。
+     * 此时直接使用当前类持有的 Binance API 创建 reduceOnly 市价平仓单。
      */
     private void closeImmediatelyAfterProtectionTrigger(PendingProtection pending,
                                                          Side openSide,
@@ -272,33 +272,32 @@ public class PendingOrderProtectionService {
     }
 
     /**
-     * 使用实际成交数量创建保护单，而不是 closePosition=true 的 Close-All 保护单。
-     * Binance 对同方向的 closePosition 条件单存在额外限制，容易出现 -4130，
-     * 导致第一个保护单成功、第二个保护单失败。这里改成 quantity + reduceOnly，
-     * 两个保护单分别保护本次实际成交数量，可以同时存在，并且不会增加仓位。
+     * 创建仓位级条件保护单。
+     *
+     * closePosition=true 表示触发后关闭当前方向的全部仓位，而不是只平固定数量。
+     * 因此这里不再设置 quantity，也不设置 reduceOnly。
      */
     private boolean createProtectionAlgoOrder(String symbol, Side side, OrderType type,
-                                              double triggerPrice, double quantity, String name) {
+                                              double triggerPrice, String name) {
         NewAlgoOrderRequest request = new NewAlgoOrderRequest();
-        request.setAlgoType(AlgoType.CONDITIONAL);
+        request.setAlgoType("CONDITIONAL");
         request.setSymbol(symbol);
         request.setSide(side);
         request.setType(type.name());
-        request.setQuantity(quantity);
         request.setTriggerPrice(triggerPrice);
-        request.setReduceOnly(ReduceOnly.TRUE);
+        request.setClosePosition("TRUE");
         request.setNewOrderRespType(NewOrderRespType.RESULT);
 
         ApiResponse<NewAlgoOrderResponse> response = api.newAlgoOrder(request);
         if (response.getStatusCode() != 200 || response.getData() == null) {
             throw new RuntimeException(name + " 止盈止损订单创建失败！symbol=" + symbol
-                    + ", triggerPrice=" + triggerPrice + ", quantity=" + quantity);
+                    + ", triggerPrice=" + triggerPrice);
         }
 
         NewAlgoOrderResponse data = response.getData();
-        log.info("{} 保护单创建成功: symbol={}, algoId={}, type={}, side={}, quantity={}, triggerPrice={}, status={}",
+        log.info("{} 仓位级保护单创建成功: symbol={}, algoId={}, type={}, side={}, triggerPrice={}, closePosition={}, status={}",
                 name, symbol, data.getAlgoId(), data.getOrderType(), data.getSide(),
-                quantity, data.getTriggerPrice(), data.getAlgoStatus());
+                data.getTriggerPrice(), "TRUE", data.getAlgoStatus());
         return true;
     }
 
