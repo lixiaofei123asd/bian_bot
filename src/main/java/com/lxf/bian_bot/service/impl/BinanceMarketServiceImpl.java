@@ -140,20 +140,17 @@ public class BinanceMarketServiceImpl implements BinanceMarketService {
         result.setEventTime(data.getE());
         result.setTransactionTime(data.getT());
         List<BinanceOrderBookLevel> bids = data.getBids().stream()
-                .map(bid -> {
-                    BinanceOrderBookLevel level = new BinanceOrderBookLevel();
-                    level.setPrice(new BigDecimal(bid.get(0)));
-                    level.setQuantity(new BigDecimal(bid.get(1)));
-                    return level;
-                })
+                .map(bid -> BinanceOrderBookLevel.builder()
+                        .price(new BigDecimal(bid.getFirst()))
+                        .quantity(new BigDecimal(bid.get(1)))
+                        .build())
                 .toList();
+
         List<BinanceOrderBookLevel> asks = data.getAsks().stream()
-                .map(ask -> {
-                    BinanceOrderBookLevel level = new BinanceOrderBookLevel();
-                    level.setPrice(new BigDecimal(ask.get(0)));
-                    level.setQuantity(new BigDecimal(ask.get(1)));
-                    return level;
-                })
+                .map(ask -> BinanceOrderBookLevel.builder()
+                        .price(new BigDecimal(ask.getFirst()))
+                        .quantity(new BigDecimal(ask.get(1)))
+                        .build())
                 .toList();
         result.setBids(bids);
         result.setAsks(asks);

@@ -2,6 +2,7 @@ package com.lxf.bian_bot.model;
 
 import java.math.BigDecimal;
 import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
@@ -9,6 +10,7 @@ import lombok.NoArgsConstructor;
  * Binance 合约订单簿单档数据。
  */
 @Data
+@Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class BinanceOrderBookLevel {
