@@ -5,6 +5,7 @@ import com.binance.connector.client.derivatives_trading_usds_futures.rest.api.De
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.Interval;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.KlineCandlestickDataResponse;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.MarkPriceResponse1;
+import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.OrderBookResponse;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.RecentTradesListResponse;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.SymbolOrderBookTickerResponse1;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.SymbolPriceTickerV2Response1;
@@ -53,6 +54,13 @@ public class BinanceMarketServiceImpl implements BinanceMarketService {
         List<BinanceKline> klines = parseKlines(response.getData(), symbol);
         klineCache.put(symbol, cacheInterval, klines);
         return klines;
+    }
+
+    @Override
+    public List<BinanceKline> refreshLatestKlines(String symbol, Interval interval, Long limit) {
+        log.info("强制获取 Binance 最新 K线: symbol={}, interval={}, limit={}", symbol, interval, limit);
+        ApiResponse<KlineCandlestickDataResponse> response = api.klineCandlestickData(symbol, interval, null, null, limit);
+        return parseKlines(response.getData(), symbol);
     }
 
     @Override
@@ -124,16 +132,31 @@ public class BinanceMarketServiceImpl implements BinanceMarketService {
 
     @Override
     public BinanceOrderBook getOrderBook(String symbol, Long limit) {
-        ApiResponse<com.binance.connector.client.derivatives_trading_usds_futures.rest.model.OrderBookResponse> response =
-                api.orderBook(symbol, limit);
-        com.binance.connector.client.derivatives_trading_usds_futures.rest.model.OrderBookResponse data = response.getData();
+        ApiResponse<OrderBookResponse> response = api.orderBook(symbol, limit);
+        OrderBookResponse data = response.getData();
 
         BinanceOrderBook result = new BinanceOrderBook();
         result.setLastUpdateId(data.getLastUpdateId());
         result.setEventTime(data.getE());
         result.setTransactionTime(data.getT());
-        result.setBids(parseOrderBookLevels(data.getBids()));
-        result.setAsks(parseOrderBookLevels(data.getAsks()));
+        List<BinanceOrderBookLevel> bids = data.getBids().stream()
+                .map(bid -> {
+                    BinanceOrderBookLevel level = new BinanceOrderBookLevel();
+                    level.setPrice(new BigDecimal(bid.get(0)));
+                    level.setQuantity(new BigDecimal(bid.get(1)));
+                    return level;
+                })
+                .toList();
+        List<BinanceOrderBookLevel> asks = data.getAsks().stream()
+                .map(ask -> {
+                    BinanceOrderBookLevel level = new BinanceOrderBookLevel();
+                    level.setPrice(new BigDecimal(ask.get(0)));
+                    level.setQuantity(new BigDecimal(ask.get(1)));
+                    return level;
+                })
+                .toList();
+        result.setBids(bids);
+        result.setAsks(asks);
         return result;
     }
 
@@ -183,19 +206,6 @@ public class BinanceMarketServiceImpl implements BinanceMarketService {
         });
 
         log.info("Binance K线解析完成: {} 条", result.size());
-        return result;
-    }
-
-    private List<BinanceOrderBookLevel> parseOrderBookLevels(List<List<String>> levels) {
-        if (levels == null || levels.isEmpty()) {
-            return Collections.emptyList();
-        }
-
-        List<BinanceOrderBookLevel> result = new ArrayList<>(levels.size());
-        levels.forEach(level -> result.add(
-                new BinanceOrderBookLevel(
-                        new BigDecimal(level.get(0)),
-                        new BigDecimal(level.get(1)))));
         return result;
     }
 

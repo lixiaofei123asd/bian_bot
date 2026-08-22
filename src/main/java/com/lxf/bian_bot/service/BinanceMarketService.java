@@ -22,6 +22,11 @@ public interface BinanceMarketService {
     List<BinanceKline> getKlines(String symbol, Interval interval, Long limit);
 
     /**
+     * 强制从 Binance 获取最新 K 线，不读取本地缓存
+     */
+    List<BinanceKline> refreshLatestKlines(String symbol, Interval interval, Long limit);
+
+    /**
      * 获取合约最新价格。
      *
      * @param symbol 交易对
