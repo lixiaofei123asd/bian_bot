@@ -7,7 +7,6 @@ import com.lxf.bian_bot.analysis.enums.IndicatorSignal;
 import com.lxf.bian_bot.analysis.enums.TradingSignal;
 import com.lxf.bian_bot.analysis.indicator.IndicatorDeepSeek;
 import com.lxf.bian_bot.cache.TickerCache;
-import com.lxf.bian_bot.config.BinanceProperties;
 import com.lxf.bian_bot.config.model.StrategyConfig;
 import com.lxf.bian_bot.model.AccountInfo;
 import com.lxf.bian_bot.model.BinancePriceTicker;
@@ -47,11 +46,10 @@ public class AiStrategy extends BaseStrategy {
             TradingState tradingState,
             BinanceMarketService marketService,
             StrategyConfig strategyConfig,
-            BinanceProperties binanceProperties,
             BinanceWebSocketStreamsService webSocketStreamsService,
             TickerCache tickerCache,
             BinanceTradingService tradingService) {
-        super(strategyConfig, binanceProperties, webSocketStreamsService, tickerCache, tradingService);
+        super(strategyConfig, webSocketStreamsService, tickerCache, tradingService);
         this.deepSeek = deepSeek;
         this.tradingState = tradingState;
         this.marketService = marketService;
