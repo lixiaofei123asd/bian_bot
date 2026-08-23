@@ -24,7 +24,10 @@ public class BinanceMarketAnalysisServiceImpl implements BinanceMarketAnalysisSe
     private final StrategyConfig strategyConfig;
     private final StrategyRegistry strategyRegistry;
 
-    public BinanceMarketAnalysisServiceImpl(KlineCache klineCache, StrategyConfig strategyConfig, StrategyRegistry strategyRegistry) {
+    public BinanceMarketAnalysisServiceImpl(
+            KlineCache klineCache,
+            StrategyConfig strategyConfig,
+            StrategyRegistry strategyRegistry) {
         this.klineCache = klineCache;
         this.strategyConfig = strategyConfig;
         this.strategyRegistry = strategyRegistry;
@@ -34,20 +37,30 @@ public class BinanceMarketAnalysisServiceImpl implements BinanceMarketAnalysisSe
     public TradingDecision analyze(String symbol) {
         log.info("========== 开始市场分析 {} ==========", symbol);
 
-        List<BinanceKline> klines = klineCache.get(symbol, KLINE_INTERVAL);
-        if (klines.isEmpty()) {
-            log.warn("{} KlineCache 中没有 K线数据", symbol);
-            return buildWaitDecision(symbol);
-        }
-
-        BigDecimal currentPrice = klines.getLast().getClosePrice();
         String strategyName = strategyConfig.getStrategyName(symbol);
         Strategy strategy = strategyRegistry.getStrategy(strategyName);
 
         if (strategy == null) {
             log.warn("未找到策略: symbol={}, strategy={}", symbol, strategyName);
-            return buildWaitDecision(symbol);
+            return buildWaitDecision(symbol, "未找到对应 Strategy");
         }
+
+        /*
+         * 外部驱动只负责周期性询问 Strategy。
+         * 是否真正执行，由 Strategy 自己决定。
+         */
+        if (!strategy.shouldExecute(symbol)) {
+            log.debug("Strategy 暂不需要执行: symbol={}, strategy={}", symbol, strategyName);
+            return buildWaitDecision(symbol, "Strategy 当前未到执行时间");
+        }
+
+        List<BinanceKline> klines = klineCache.get(symbol, KLINE_INTERVAL);
+        if (klines.isEmpty()) {
+            log.warn("{} KlineCache 中没有 K线数据", symbol);
+            return buildWaitDecision(symbol, "KlineCache 中没有 K线数据");
+        }
+
+        BigDecimal currentPrice = klines.getLast().getClosePrice();
 
         TradingSignal signal = strategy.execute(symbol);
         TradingDecision decision = buildDecision(symbol, currentPrice, signal, strategyName);
@@ -56,16 +69,21 @@ public class BinanceMarketAnalysisServiceImpl implements BinanceMarketAnalysisSe
         return decision;
     }
 
-    private TradingDecision buildWaitDecision(String symbol) {
+    private TradingDecision buildWaitDecision(String symbol, String reason) {
         return TradingDecision.builder()
                 .symbol(symbol)
                 .decision(TradingDecision.DecisionType.WAIT)
                 .currentPrice(null)
-                .reason("KlineCache 中没有 K线数据")
+                .reason(reason)
                 .build();
     }
 
-    private TradingDecision buildDecision(String symbol, BigDecimal currentPrice, TradingSignal signal, String strategyName) {
+    private TradingDecision buildDecision(
+            String symbol,
+            BigDecimal currentPrice,
+            TradingSignal signal,
+            String strategyName) {
+
         TradingDecision.DecisionType decisionType = switch (signal) {
             case LONG -> TradingDecision.DecisionType.ENTER_LONG;
             case SHORT -> TradingDecision.DecisionType.ENTER_SHORT;
