@@ -2,6 +2,7 @@ package com.lxf.bian_bot.analysis.indicator;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lxf.bian_bot.analysis.Indicator;
+import com.lxf.bian_bot.analysis.IndicatorResult;
 import com.lxf.bian_bot.analysis.MarketDataProvider;
 import com.lxf.bian_bot.analysis.enums.IndicatorSignal;
 import com.lxf.bian_bot.deepseek.DeepSeekClient;
@@ -21,7 +22,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 /**
- * 使用 DeepSeek 分析当前合约行情并返回 IndicatorSignal。
+ * 使用 DeepSeek 分析当前合约行情并返回 IndicatorResult。
  */
 @Slf4j
 @Component
@@ -43,7 +44,7 @@ public class IndicatorDeepSeek implements Indicator {
     }
 
     @Override
-    public IndicatorSignal calculate(String symbol) {
+    public IndicatorResult calculate(String symbol) {
         try {
             Map<String, Object> marketData = collectMarketData(symbol);
             String userPrompt = objectMapper.writeValueAsString(marketData);
@@ -53,16 +54,47 @@ public class IndicatorDeepSeek implements Indicator {
 
             if (result.getSignal() == null) {
                 log.warn("DeepSeek 未返回有效方向: symbol={}, response={}", symbol, response);
-                return IndicatorSignal.NEUTRAL;
+                return neutralResult();
             }
 
-            log.info("DeepSeek指标: symbol={}, signal={}, confidence={}, reason={}",
-                    symbol, result.getSignal(), result.getConfidence(), result.getReason());
-            return result.getSignal();
+            IndicatorResult indicatorResult = IndicatorResult.builder()
+                    .indicatorName(getName())
+                    .signal(result.getSignal())
+                    .confidence(result.getConfidence())
+                    .minEntryPrice(result.getMinEntryPrice())
+                    .maxEntryPrice(result.getMaxEntryPrice())
+                    .entryPrice(result.getEntryPrice())
+                    .takeProfitPrice(result.getTakeProfitPrice())
+                    .stopLossPrice(result.getStopLossPrice())
+                    .usdtAmount(result.getUsdtAmount())
+                    .reason(result.getReason())
+                    .build();
+
+            log.info("DeepSeek指标: symbol={}, signal={}, confidence={}, minEntryPrice={}, maxEntryPrice={}, entryPrice={}, takeProfitPrice={}, stopLossPrice={}, usdtAmount={}, reason={}",
+                    symbol,
+                    indicatorResult.getSignal(),
+                    indicatorResult.getConfidence(),
+                    indicatorResult.getMinEntryPrice(),
+                    indicatorResult.getMaxEntryPrice(),
+                    indicatorResult.getEntryPrice(),
+                    indicatorResult.getTakeProfitPrice(),
+                    indicatorResult.getStopLossPrice(),
+                    indicatorResult.getUsdtAmount(),
+                    indicatorResult.getReason());
+
+            return indicatorResult;
         } catch (Exception e) {
             log.error("DeepSeek指标分析失败: symbol={}", symbol, e);
-            return IndicatorSignal.NEUTRAL;
+            return neutralResult();
         }
+    }
+
+    private IndicatorResult neutralResult() {
+        return IndicatorResult.builder()
+                .indicatorName(getName())
+                .signal(IndicatorSignal.NEUTRAL)
+                .confidence(0)
+                .build();
     }
 
     private Map<String, Object> collectMarketData(String symbol) {
@@ -88,27 +120,47 @@ public class IndicatorDeepSeek implements Indicator {
     }
 
     private static final String SYSTEM_PROMPT = """
-            你是一个短线合约行情分析器。
-            你的任务是根据提供的 Binance 合约实时行情数据，判断当前极短线方向。
+            你是一个合约行情分析器。
+            你的任务是根据提供的 Binance 合约行情数据，判断当前市场方向，并给出交易参数建议。
 
             只能返回 JSON，不要返回 Markdown，不要返回解释性文字。
             JSON 格式必须严格为：
-            {"signal":"UP|DOWN|NEUTRAL","confidence":0,"reason":"简短原因"}
+            {
+              "signal":"UP|DOWN|NEUTRAL",
+              "confidence":0,
+              "minEntryPrice":0,
+              "maxEntryPrice":0,
+              "entryPrice":0,
+              "takeProfitPrice":0,
+              "stopLossPrice":0,
+              "usdtAmount":0,
+              "reason":"简短原因"
+            }
 
             signal 含义：
             UP = 当前更偏向上涨
             DOWN = 当前更偏向下跌
             NEUTRAL = 多空没有足够明确的优势
 
+            参数含义：
+            minEntryPrice = 建议允许的最小入场价格
+            maxEntryPrice = 建议允许的最大入场价格
+            entryPrice = 如果可以明确给出最佳入场价格则填写，否则返回 null
+            takeProfitPrice = 建议止盈价格
+            stopLossPrice = 建议止损价格
+            usdtAmount = 建议使用的 USDT 金额
+
+            如果 signal 为 NEUTRAL，则交易相关价格和金额可以返回 null。
+
             请综合考虑：
-            1. 最近 1 秒 K 线的连续方向和反转情况；
-            2. 最新成交价格和短线价格变化；
+            1. 提供的 K 线周期和价格趋势；
+            2. 最新成交价格和价格变化；
             3. Order Book 买卖盘力量；
             4. 最近成交的买卖方向和成交量；
             5. Mark Price、Index Price、Funding Rate；
             6. 24 小时价格变化。
 
-            不要因为单独一个字段就判断方向。对于信号不明确的情况返回 NEUTRAL。
+            不要因为单独一个字段就判断方向。
             confidence 返回 0 到 100 的整数。
             """;
 }
