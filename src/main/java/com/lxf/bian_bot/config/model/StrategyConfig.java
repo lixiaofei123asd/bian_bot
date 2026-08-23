@@ -1,5 +1,6 @@
 package com.lxf.bian_bot.config.model;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -19,6 +20,23 @@ public class StrategyConfig {
      * 获取指定交易对对应的策略名称。
      */
     public String getStrategyName(String symbol) {
+        if (symbol == null) {
+            return null;
+        }
         return symbols.get(symbol.toUpperCase());
+    }
+
+    /**
+     * 获取当前策略负责的所有交易对。
+     */
+    public List<String> getSymbolsForStrategy(String strategyName) {
+        if (strategyName == null || strategyName.isBlank()) {
+            return List.of();
+        }
+
+        return symbols.entrySet().stream()
+                .filter(entry -> strategyName.equalsIgnoreCase(entry.getValue()))
+                .map(Map.Entry::getKey)
+                .toList();
     }
 }
