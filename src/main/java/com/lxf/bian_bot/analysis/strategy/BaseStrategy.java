@@ -9,6 +9,16 @@ import java.util.List;
 
 public abstract class BaseStrategy implements Strategy {
 
+    /**
+     * 普通策略默认允许每次被外部驱动时执行。
+     *
+     * <p>需要自定义执行频率的策略直接覆盖 shouldExecute() 即可。</p>
+     */
+    @Override
+    public boolean shouldExecute(String symbol) {
+        return true;
+    }
+
     @Override
     public TradingSignal execute(String symbol) {
         int upCount = 0;
