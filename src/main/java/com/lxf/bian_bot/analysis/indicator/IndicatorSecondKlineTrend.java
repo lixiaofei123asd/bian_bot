@@ -1,6 +1,7 @@
 package com.lxf.bian_bot.analysis.indicator;
 
 import com.lxf.bian_bot.analysis.Indicator;
+import com.lxf.bian_bot.analysis.IndicatorResult;
 import com.lxf.bian_bot.analysis.MarketDataProvider;
 import com.lxf.bian_bot.analysis.enums.IndicatorSignal;
 import com.lxf.bian_bot.model.BinanceSecondKline;
@@ -15,7 +16,7 @@ import java.util.List;
 /**
  * 基于最近 1 秒 K 线判断极短线价格趋势。
  *
- * 设计目标不是预测，而是过滤 1 秒级别的频繁反转，只在短线方向足够明确时返回 UP/DOWN。
+ * <p>设计目标不是预测，而是过滤 1 秒级别的频繁反转，只在短线方向足够明确时返回 UP/DOWN。</p>
  */
 @Slf4j
 @Component
@@ -40,18 +41,20 @@ public class IndicatorSecondKlineTrend implements Indicator {
     /** 最小总体价格变化比例，0.03% */
     private static final BigDecimal MIN_PRICE_CHANGE_RATIO = new BigDecimal("0.0003");
 
+    private final MarketDataProvider marketDataProvider;
+
     @Override
     public String getName() {
         return "SECOND_KLINE_TREND";
     }
 
     @Override
-    public IndicatorSignal calculate(String symbol) {
+    public IndicatorResult calculate(String symbol) {
         List<BinanceSecondKline> klines =
                 marketDataProvider.getSecondKlinesIncludingCurrent(symbol, KLINE_COUNT);
 
         if (klines == null || klines.size() < KLINE_COUNT) {
-            return IndicatorSignal.NEUTRAL;
+            return neutralResult();
         }
 
         BinanceSecondKline first = klines.get(0);
@@ -59,7 +62,7 @@ public class IndicatorSecondKlineTrend implements Indicator {
 
         if (first.getOpenPrice() == null || last.getClosePrice() == null
                 || first.getOpenPrice().signum() <= 0 || last.getClosePrice().signum() <= 0) {
-            return IndicatorSignal.NEUTRAL;
+            return neutralResult();
         }
 
         int upCount = 0;
@@ -92,7 +95,7 @@ public class IndicatorSecondKlineTrend implements Indicator {
 
         int totalDirectional = upCount + downCount;
         if (totalDirectional == 0 || reversals > MAX_REVERSALS) {
-            return IndicatorSignal.NEUTRAL;
+            return neutralResult();
         }
 
         BigDecimal priceChangeRatio = last.getClosePrice()
@@ -101,7 +104,7 @@ public class IndicatorSecondKlineTrend implements Indicator {
                 .abs();
 
         if (priceChangeRatio.compareTo(MIN_PRICE_CHANGE_RATIO) < 0) {
-            return IndicatorSignal.NEUTRAL;
+            return neutralResult();
         }
 
         IndicatorSignal overallDirection =
@@ -112,11 +115,11 @@ public class IndicatorSecondKlineTrend implements Indicator {
         double ratio = (double) directionCount / totalDirectional;
 
         if (directionCount < MIN_DIRECTION_COUNT || ratio < MIN_DIRECTION_RATIO) {
-            return IndicatorSignal.NEUTRAL;
+            return neutralResult();
         }
 
         if (!hasRecentDirection(klines, overallDirection)) {
-            return IndicatorSignal.NEUTRAL;
+            return neutralResult();
         }
 
         log.debug("1秒K线趋势: symbol={}, direction={}, upCount={}, downCount={}, reversals={}, priceChange={}%",
@@ -127,10 +130,28 @@ public class IndicatorSecondKlineTrend implements Indicator {
                 reversals,
                 priceChangeRatio.multiply(BigDecimal.valueOf(100)).setScale(4, RoundingMode.HALF_UP));
 
-        return overallDirection;
+        return IndicatorResult.builder()
+                .indicatorName(getName())
+                .signal(overallDirection)
+                .confidence((int) Math.round(ratio * 100))
+                .reason(String.format(
+                        "最近%d根1秒K线：上涨%d根、下跌%d根、反转%d次，整体价格变化%s%%",
+                        KLINE_COUNT,
+                        upCount,
+                        downCount,
+                        reversals,
+                        priceChangeRatio.multiply(BigDecimal.valueOf(100))
+                                .setScale(4, RoundingMode.HALF_UP)))
+                .build();
     }
 
-    private final MarketDataProvider marketDataProvider;
+    private IndicatorResult neutralResult() {
+        return IndicatorResult.builder()
+                .indicatorName(getName())
+                .signal(IndicatorSignal.NEUTRAL)
+                .confidence(0)
+                .build();
+    }
 
     private boolean hasRecentDirection(List<BinanceSecondKline> klines, IndicatorSignal expected) {
         int start = Math.max(0, klines.size() - RECENT_DIRECTION_COUNT);
