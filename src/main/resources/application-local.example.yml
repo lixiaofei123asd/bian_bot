@@ -31,6 +31,10 @@ binance:
 
     # Binance WebSocket Streams 地址
     web-socket-streams-url: wss://fstream.binance.com/stream
+deepseek:
+  api-key: YOUR_API_KEY
+  model: deepseek-chat
+  base-url: https://api.deepseek.com
 
 # ==================== 策略配置 ====================
 # 每个币种只能配置一个策略
