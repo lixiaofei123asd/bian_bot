@@ -2,6 +2,7 @@ package com.lxf.bian_bot.deepseek;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lxf.bian_bot.config.model.DeepSeekConfig;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
@@ -12,20 +13,17 @@ import org.springframework.web.client.RestClient;
 @RequiredArgsConstructor
 public class DeepSeekClient {
 
-    private static final String BASE_URL = "https://api.deepseek.com";
-    private static final String MODEL = "deepseek-v4-pro";
-
     private final ObjectMapper objectMapper;
-    private final RestClient restClient = RestClient.builder().baseUrl(BASE_URL).build();
+    private final DeepSeekConfig deepSeekConfig;
 
     public String chat(String systemPrompt, String userPrompt) {
-        String apiKey = System.getenv("DEEPSEEK_API_KEY");
+        String apiKey = deepSeekConfig.apiKey();
         if (apiKey == null || apiKey.isBlank()) {
-            throw new IllegalStateException("未配置环境变量 DEEPSEEK_API_KEY");
+            throw new IllegalStateException("未配置 DeepSeek API Key");
         }
 
         DeepSeekChatRequest request = new DeepSeekChatRequest(
-                MODEL,
+                deepSeekConfig.model(),
                 List.of(
                         new DeepSeekMessage("system", systemPrompt),
                         new DeepSeekMessage("user", userPrompt)
@@ -34,7 +32,10 @@ public class DeepSeekClient {
                 false
         );
 
-        String response = restClient.post()
+        String response = RestClient.builder()
+                .baseUrl(deepSeekConfig.baseUrl())
+                .build()
+                .post()
                 .uri("/chat/completions")
                 .contentType(MediaType.APPLICATION_JSON)
                 .header("Authorization", "Bearer " + apiKey)
