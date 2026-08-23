@@ -14,6 +14,19 @@ public interface Strategy {
     // 获取满足条件的数量
     int getRequiredMatchCount();
 
+    /**
+     * 判断当前策略是否需要在此时执行。
+     *
+     * <p>执行频率由具体 Strategy 自己决定，外部只负责周期性询问，
+     * 不应该知道策略内部到底是 10 秒、3 分钟还是 5 分钟执行一次。</p>
+     *
+     * @param symbol 交易对
+     * @return true 表示现在需要执行，false 表示暂不执行
+     */
+    default boolean shouldExecute(String symbol) {
+        return true;
+    }
+
     // 执行策略，策略内部的指标自行获取市场数据
     TradingSignal execute(String symbol);
 }
