@@ -141,7 +141,7 @@ public class BinanceWebSocketStreamsClient implements WebSocket.Listener {
                   "id": %d
                 }
                 """.formatted(stream, id);
-        log.warn("发送 Binance SUBSCRIBE: {}", request);
+       // log.warn("发送 Binance SUBSCRIBE: {}", request);
         webSocket.sendText(request, true);
     }
 
@@ -194,7 +194,7 @@ public class BinanceWebSocketStreamsClient implements WebSocket.Listener {
         try {
             log.debug("Binance WebSocket 收到消息: {}", message);
             if (message.contains("\"result\"")) {
-                log.warn("Binance 订阅响应: {}", message);
+             //   log.warn("Binance 订阅响应: {}", message);
                 webSocket.request(1);
                 return null;
             }

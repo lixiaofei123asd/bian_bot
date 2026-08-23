@@ -143,9 +143,7 @@ public class BinanceWebSocketStreamsServiceImpl implements BinanceWebSocketStrea
     }
 
     private void initializeKlineCache(List<String> symbols) {
-        log.info("========================================");
         log.info("开始初始化 Binance K线缓存");
-        log.info("========================================");
         for (String symbol : symbols) {
             try {
                 List<BinanceKline> klines = marketService.getKlines(symbol, Interval.INTERVAL_1m, (long) KLINE_CACHE_SIZE);

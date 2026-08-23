@@ -1,10 +1,10 @@
 package com.lxf.bian_bot.analysis.strategy;
 
 import com.lxf.bian_bot.analysis.Indicator;
-import com.lxf.bian_bot.analysis.model.IndicatorResult;
 import com.lxf.bian_bot.analysis.Strategy;
 import com.lxf.bian_bot.analysis.enums.IndicatorSignal;
 import com.lxf.bian_bot.analysis.enums.TradingSignal;
+import com.lxf.bian_bot.analysis.model.IndicatorResult;
 import com.lxf.bian_bot.cache.TickerCache;
 import com.lxf.bian_bot.config.strategy.StrategyConfig;
 import com.lxf.bian_bot.model.TradingDecision;
@@ -12,7 +12,6 @@ import com.lxf.bian_bot.thirdparty.binance.service.BinanceWebSocketStreamsServic
 import com.lxf.bian_bot.trading.service.BinanceTradingService;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import lombok.extern.slf4j.Slf4j;
@@ -149,6 +148,32 @@ public abstract class BaseStrategy implements Strategy {
         return TradingSignal.WAIT;
     }
 
-    @Override
-    public abstract List<Indicator> getIndicators();
+    /**
+     * 获取策略最终交易决策。
+     *
+     * <p>普通策略默认根据 TradingSignal 转换；AI 等高级策略可以覆盖此方法，
+     * 返回自己的入场价格、止盈、止损、金额以及持仓管理决策。</p>
+     */
+    public TradingDecision decide(String symbol) {
+        TradingSignal signal = execute(symbol);
+
+        TradingDecision.DecisionType decisionType = switch (signal) {
+            case LONG -> TradingDecision.DecisionType.ENTER_LONG;
+            case SHORT -> TradingDecision.DecisionType.ENTER_SHORT;
+            case WAIT -> TradingDecision.DecisionType.WAIT;
+        };
+
+        TradingDecision.Direction direction = switch (signal) {
+            case LONG -> TradingDecision.Direction.LONG;
+            case SHORT -> TradingDecision.Direction.SHORT;
+            case WAIT -> null;
+        };
+
+        return TradingDecision.builder()
+                .symbol(symbol)
+                .decision(decisionType)
+                .direction(direction)
+                .reason("策略: " + getName() + ", 信号: " + signal)
+                .build();
+    }
 }

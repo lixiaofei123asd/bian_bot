@@ -11,7 +11,7 @@ logging:
 # ==================== 交易配置 ====================
 trading:
   # 是否允许交易信号真正发送订单
-  enabled: false
+  enabled: true
   # 每次开仓使用的 USDT 金额
   usdt-amount: 10
   # 下单模式：

@@ -23,14 +23,9 @@ public class BinanceRestApiConfiguration {
      */
     @Bean
     public DerivativesTradingUsdsFuturesRestApi futuresApi(BinanceProperties properties) {
-
-        log.info("开始初始化 Binance Futures API");
-        log.info("环境：{}", properties.getBaseUrl());
         ClientConfiguration clientConfiguration = createClientConfiguration(properties);
         clientConfiguration.setUrl(properties.getBaseUrl());
-        DerivativesTradingUsdsFuturesRestApi api = new DerivativesTradingUsdsFuturesRestApi(clientConfiguration);
-        log.info("初始化 Binance Futures API 成功！");
-        return api;
+        return new DerivativesTradingUsdsFuturesRestApi(clientConfiguration);
     }
 
     /**
@@ -39,13 +34,9 @@ public class BinanceRestApiConfiguration {
      */
     @Bean
     public UserDataStreamsApi userDataStreamsApi(BinanceProperties properties) {
-        log.info("开始初始化 UserData Streams API");
-        log.info("环境：{}", properties.getBaseUrl());
         ClientConfiguration clientConfiguration = createClientConfiguration(properties);
         clientConfiguration.setUrl(properties.getBaseUrl());
-        UserDataStreamsApi api = new UserDataStreamsApi(clientConfiguration);
-        log.info("初始化 UserData Streams API 成功！");
-        return api;
+        return new UserDataStreamsApi(clientConfiguration);
     }
 
     private ClientConfiguration createClientConfiguration(BinanceProperties properties) {
@@ -54,7 +45,6 @@ public class BinanceRestApiConfiguration {
         signatureConfiguration.setApiKey(properties.getApiKey());
         signatureConfiguration.setSecretKey(properties.getSecretKey());
         clientConfiguration.setSignatureConfiguration(signatureConfiguration);
-
         return clientConfiguration;
     }
 }

@@ -48,8 +48,6 @@ public class BinanceUserDataStreamClient implements WebSocket.Listener {
         }
 
         String url = buildUrl(listenKey);
-        log.info("连接 Binance Futures User Data Stream: {}", url);
-
         HttpClient.Builder builder = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10));
         if (proxyEnabled) {

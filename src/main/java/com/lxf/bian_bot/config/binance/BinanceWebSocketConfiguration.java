@@ -17,17 +17,12 @@ public class BinanceWebSocketConfiguration {
     @Bean
     public DerivativesTradingUsdsFuturesWebSocketApi futuresWebSocketApi(BinanceProperties properties) {
 
-        log.info("Binance Futures WebSocket API 初始化");
-        log.info("环境：{}", properties.getWebSocketApiUrl());
         WebSocketClientConfiguration configuration = DerivativesTradingUsdsFuturesWebSocketApiUtil.getClientConfiguration();
         SignatureConfiguration signatureConfiguration = new SignatureConfiguration();
         signatureConfiguration.setApiKey(properties.getApiKey());
         signatureConfiguration.setSecretKey(properties.getSecretKey());
         configuration.setSignatureConfiguration(signatureConfiguration);
         configuration.setUrl(properties.getWebSocketApiUrl());
-
-        DerivativesTradingUsdsFuturesWebSocketApi api = new DerivativesTradingUsdsFuturesWebSocketApi(configuration);
-        log.info("Binance Futures WebSocket API 初始化成功！");
-        return api;
+        return new DerivativesTradingUsdsFuturesWebSocketApi(configuration);
     }
 }

@@ -151,8 +151,8 @@ public class SymbolRuleCache {
         return symbols.stream()
                 .map(String::trim)
                 .filter(symbol -> !symbol.isEmpty())
-                .filter(symbol -> rules.containsKey(symbol.toUpperCase()))
                 .map(String::toUpperCase)
+                .filter(rules::containsKey)
                 .distinct()
                 .toList();
     }
