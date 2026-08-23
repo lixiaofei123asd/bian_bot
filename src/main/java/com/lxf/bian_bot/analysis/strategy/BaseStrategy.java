@@ -1,6 +1,7 @@
 package com.lxf.bian_bot.analysis.strategy;
 
 import com.lxf.bian_bot.analysis.Indicator;
+import com.lxf.bian_bot.analysis.IndicatorResult;
 import com.lxf.bian_bot.analysis.Strategy;
 import com.lxf.bian_bot.analysis.enums.IndicatorSignal;
 import com.lxf.bian_bot.analysis.enums.TradingSignal;
@@ -14,7 +15,12 @@ public abstract class BaseStrategy implements Strategy {
         int downCount = 0;
 
         for (Indicator indicator : getIndicators()) {
-            IndicatorSignal signal = indicator.calculate(symbol);
+            IndicatorResult result = indicator.calculate(symbol);
+            if (result == null || result.getSignal() == null) {
+                continue;
+            }
+
+            IndicatorSignal signal = result.getSignal();
             if (signal == IndicatorSignal.UP) {
                 upCount++;
             } else if (signal == IndicatorSignal.DOWN) {
