@@ -6,6 +6,7 @@ import com.lxf.bian_bot.config.model.DeepSeekConfig;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
@@ -32,9 +33,23 @@ public class DeepSeekClient {
                 false
         );
 
-        String response = RestClient.builder()
+        /*
+         * 项目中 Binance WebSocket 使用了 Jetty 11，而 Spring Boot 3.5 / Spring 6.2
+         * 使用 RestClient 时可能使用 Spring 管理的 Jetty HTTP Client。
+         * 如果 classpath 上同时存在不兼容的 Jetty 版本，会出现：
+         *
+         * NoSuchMethodError:
+         * HttpClient.newRequest(java.net.URI)
+         *
+         * DeepSeek 是普通 HTTP 请求，这里明确使用 JDK/URLConnection 实现，
+         * 不让 DeepSeek HTTP 请求依赖 Jetty，从根上避免 Jetty 版本冲突。
+         */
+        RestClient restClient = RestClient.builder()
+                .requestFactory(new SimpleClientHttpRequestFactory())
                 .baseUrl(deepSeekConfig.baseUrl())
-                .build()
+                .build();
+
+        String response = restClient
                 .post()
                 .uri("/chat/completions")
                 .contentType(MediaType.APPLICATION_JSON)
