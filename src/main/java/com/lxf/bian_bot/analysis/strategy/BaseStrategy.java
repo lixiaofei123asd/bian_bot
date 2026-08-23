@@ -6,9 +6,7 @@ import com.lxf.bian_bot.analysis.Strategy;
 import com.lxf.bian_bot.analysis.enums.IndicatorSignal;
 import com.lxf.bian_bot.analysis.enums.TradingSignal;
 import com.lxf.bian_bot.cache.TickerCache;
-import com.lxf.bian_bot.config.BinanceProperties;
 import com.lxf.bian_bot.config.model.StrategyConfig;
-import com.lxf.bian_bot.model.BinanceBookTicker;
 import com.lxf.bian_bot.model.TradingDecision;
 import com.lxf.bian_bot.service.BinanceWebSocketStreamsService;
 import com.lxf.bian_bot.trading.service.BinanceTradingService;
@@ -30,7 +28,6 @@ import org.springframework.scheduling.annotation.Scheduled;
 public abstract class BaseStrategy implements Strategy {
 
     private final StrategyConfig strategyConfig;
-    private final BinanceProperties binanceProperties;
     private final BinanceWebSocketStreamsService webSocketStreamsService;
     private final TickerCache tickerCache;
     private final BinanceTradingService tradingService;
@@ -40,12 +37,10 @@ public abstract class BaseStrategy implements Strategy {
 
     protected BaseStrategy(
             StrategyConfig strategyConfig,
-            BinanceProperties binanceProperties,
             BinanceWebSocketStreamsService webSocketStreamsService,
             TickerCache tickerCache,
             BinanceTradingService tradingService) {
         this.strategyConfig = strategyConfig;
-        this.binanceProperties = binanceProperties;
         this.webSocketStreamsService = webSocketStreamsService;
         this.tickerCache = tickerCache;
         this.tradingService = tradingService;
@@ -54,7 +49,7 @@ public abstract class BaseStrategy implements Strategy {
     /**
      * Strategy 的公共执行驱动。
      *
-     * <p>这里只提供很轻的心跳检查，真正的执行间隔由 Strategy 自己通过
+     * <p>这里只提供很轻的心跳检查，真正的执行间隔由具体 Strategy 自己通过
      * {@link #getExecutionInterval(String)} 决定。外部不再存在独立的
      * BinanceMarketScheduledService。</p>
      */
