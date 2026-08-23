@@ -23,6 +23,7 @@ import com.lxf.bian_bot.thirdparty.binance.enums.TradingMarginType;
 import com.lxf.bian_bot.thirdparty.binance.service.BinanceTradeService;
 import com.lxf.bian_bot.trading.order.OrderParameterCalculator;
 import com.lxf.bian_bot.trading.service.PendingOrderProtectionService;
+import java.util.List;
 import java.util.Objects;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -41,6 +42,24 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
         this.api = api;
         this.orderParameterCalculator = orderParameterCalculator;
         this.pendingOrderProtectionService = pendingOrderProtectionService;
+    }
+
+    @Override
+    public List<PositionInfo> getPositions() {
+        ApiResponse<PositionInformationV2Response> response = api.positionInformationV2(null, null);
+        if (response.getData() == null || response.getData().isEmpty()) {
+            return List.of();
+        }
+        return response.getData().stream().map(this::toPositionInfo).toList();
+    }
+
+    @Override
+    public PositionInfo getPositionInfo(String symbol) {
+        ApiResponse<PositionInformationV2Response> response = api.positionInformationV2(symbol, null);
+        if (response.getData() == null || response.getData().isEmpty()) {
+            return PositionInfo.builder().symbol(symbol).build();
+        }
+        return toPositionInfo(response.getData().getFirst());
     }
 
     @Override
@@ -125,15 +144,9 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
     @Override
     public OrderInfo createLimitOrderAndTPSLForPrice(String symbol, Side side, TimeInForce timeInForce,
                                                        double quantity, double price, double tp, double sl) {
-        if (quantity <= 0) {
-            throw new IllegalArgumentException("下单数量必须大于 0：" + quantity);
-        }
-        if (price <= 0) {
-            throw new IllegalArgumentException("下单价格必须大于 0：" + price);
-        }
-        if (tp <= 0 || sl <= 0) {
-            throw new IllegalArgumentException("止盈止损价格必须大于 0：tp=" + tp + ", sl=" + sl);
-        }
+        if (quantity <= 0) throw new IllegalArgumentException("下单数量必须大于 0：" + quantity);
+        if (price <= 0) throw new IllegalArgumentException("下单价格必须大于 0：" + price);
+        if (tp <= 0 || sl <= 0) throw new IllegalArgumentException("止盈止损价格必须大于 0：tp=" + tp + ", sl=" + sl);
 
         price = orderParameterCalculator.normalizeEntryPrice(symbol, price, Side.BUY.equals(side));
         quantity = orderParameterCalculator.normalizeLimitQuantity(symbol, quantity, price);
@@ -158,9 +171,7 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
         log.info("预计算止损价格：{}", sl);
 
         ApiResponse<NewOrderResponse> entryResponse = api.newOrder(entryRequest);
-        if (entryResponse.getStatusCode() != 200 || entryResponse.getData() == null) {
-            throw new RuntimeException("限价开仓失败！");
-        }
+        if (entryResponse.getStatusCode() != 200 || entryResponse.getData() == null) throw new RuntimeException("限价开仓失败！");
 
         NewOrderResponse entryData = entryResponse.getData();
         OrderInfo entryOrder = toOrderInfo(entryData);
@@ -168,15 +179,10 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
         log.info("限价开仓订单已提交: orderId={}, status={}, executedQty={}, avgPrice={}",
                 entryData.getOrderId(), entryData.getStatus(), entryData.getExecutedQty(), entryData.getAvgPrice());
 
-        double profitAmount = Side.BUY.equals(side)
-                ? (tp - price) * quantity
-                : (price - tp) * quantity;
-        double lossAmount = Side.BUY.equals(side)
-                ? (price - sl) * quantity
-                : (sl - price) * quantity;
+        double profitAmount = Side.BUY.equals(side) ? (tp - price) * quantity : (price - tp) * quantity;
+        double lossAmount = Side.BUY.equals(side) ? (price - sl) * quantity : (sl - price) * quantity;
 
         pendingOrderProtectionService.register(symbol, entryData.getOrderId(), side, profitAmount, lossAmount);
-
         log.info("限价开仓保护任务已等待成交: symbol={}, orderId={}, status={}, profitAmount={}, lossAmount={}",
                 symbol, entryData.getOrderId(), entryData.getStatus(), profitAmount, lossAmount);
         log.info("=========================================");
@@ -187,12 +193,8 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
     public OrderInfo createLimitOrderAndTPSLForProfitAndLoss(String symbol, Side side, TimeInForce timeInForce,
                                                                double quantity, double price, double profitAmount,
                                                                double lossAmount) {
-        if (quantity <= 0) {
-            throw new IllegalArgumentException("下单数量必须大于 0：" + quantity);
-        }
-        if (profitAmount <= 0 || lossAmount <= 0) {
-            throw new IllegalArgumentException("盈利和亏损金额必须大于 0：profitAmount=" + profitAmount + ", lossAmount=" + lossAmount);
-        }
+        if (quantity <= 0) throw new IllegalArgumentException("下单数量必须大于 0：" + quantity);
+        if (profitAmount <= 0 || lossAmount <= 0) throw new IllegalArgumentException("盈利和亏损金额必须大于 0：profitAmount=" + profitAmount + ", lossAmount=" + lossAmount);
 
         price = orderParameterCalculator.normalizeEntryPrice(symbol, price, Side.BUY.equals(side));
         quantity = orderParameterCalculator.normalizeLimitQuantity(symbol, quantity, price);
@@ -209,7 +211,6 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
 
         log.info("按照实际下单价格和数量计算止盈止损: symbol={}, price={}, quantity={}, profitAmount={}, lossAmount={}, tp={}, sl={}",
                 symbol, price, quantity, profitAmount, lossAmount, tp, sl);
-
         return createLimitOrderAndTPSLForPrice(symbol, side, timeInForce, quantity, price, tp, sl);
     }
 
@@ -217,12 +218,8 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
     public OrderInfo createLimitOrderAndTPSLForPercentage(String symbol, Side side, TimeInForce timeInForce,
                                                            double quantity, double price, double profitPercentage,
                                                            double lossPercentage) {
-        if (price <= 0) {
-            throw new IllegalArgumentException("开仓价格必须大于 0：" + price);
-        }
-        if (profitPercentage <= 0 || lossPercentage <= 0) {
-            throw new IllegalArgumentException("盈利和亏损百分比必须大于 0：profitPercentage=" + profitPercentage + ", lossPercentage=" + lossPercentage);
-        }
+        if (price <= 0) throw new IllegalArgumentException("开仓价格必须大于 0：" + price);
+        if (profitPercentage <= 0 || lossPercentage <= 0) throw new IllegalArgumentException("盈利和亏损百分比必须大于 0：profitPercentage=" + profitPercentage + ", lossPercentage=" + lossPercentage);
 
         price = orderParameterCalculator.normalizeEntryPrice(symbol, price, Side.BUY.equals(side));
         quantity = orderParameterCalculator.normalizeLimitQuantity(symbol, quantity, price);
@@ -239,7 +236,6 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
 
         log.info("按照盈亏百分比计算止盈止损: symbol={}, profitPercentage={}%, lossPercentage={}%, tp={}, sl={}",
                 symbol, profitPercentage, lossPercentage, tp, sl);
-
         return createLimitOrderAndTPSLForPrice(symbol, side, timeInForce, quantity, price, tp, sl);
     }
 
@@ -267,21 +263,19 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
         return newOrder(request, "市价平仓失败！");
     }
 
-    private PositionInfo getPositionInfo(String symbol) {
-        ApiResponse<PositionInformationV2Response> response = api.positionInformationV2(symbol, null);
-        PositionInformationV2ResponseInner data = response.getData().getFirst();
+    private PositionInfo toPositionInfo(PositionInformationV2ResponseInner data) {
         return PositionInfo.builder()
                 .symbol(data.getSymbol())
-                .positionAmt(Double.parseDouble(data.getPositionAmt()))
-                .entryPrice(Double.parseDouble(data.getEntryPrice()))
-                .breakEvenPrice(Double.parseDouble(data.getBreakEvenPrice()))
-                .markPrice(Double.parseDouble(data.getMarkPrice()))
-                .notional(Double.parseDouble(data.getNotional()))
-                .unrealizedProfit(Double.parseDouble(data.getUnRealizedProfit()))
-                .leverage(Integer.parseInt(data.getLeverage()))
+                .positionAmt(parseDouble(data.getPositionAmt()))
+                .entryPrice(parseDouble(data.getEntryPrice()))
+                .breakEvenPrice(parseDouble(data.getBreakEvenPrice()))
+                .markPrice(parseDouble(data.getMarkPrice()))
+                .notional(parseDouble(data.getNotional()))
+                .unrealizedProfit(parseDouble(data.getUnRealizedProfit()))
+                .leverage(parseInt(data.getLeverage()))
                 .marginType(data.getMarginType())
                 .positionSide(data.getPositionSide())
-                .liquidationPrice(Double.parseDouble(data.getLiquidationPrice()))
+                .liquidationPrice(parseDouble(data.getLiquidationPrice()))
                 .autoAddMargin(Boolean.parseBoolean(data.getIsAutoAddMargin()))
                 .build();
     }
@@ -290,11 +284,13 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
         return value == null || value.isBlank() ? 0D : Double.parseDouble(value);
     }
 
+    private int parseInt(String value) {
+        return value == null || value.isBlank() ? 0 : Integer.parseInt(value);
+    }
+
     private OrderInfo newOrder(NewOrderRequest request, String message) {
         ApiResponse<NewOrderResponse> response = api.newOrder(request);
-        if (response.getStatusCode() != 200 || response.getData() == null) {
-            throw new RuntimeException(message);
-        }
+        if (response.getStatusCode() != 200 || response.getData() == null) throw new RuntimeException(message);
         return toOrderInfo(response.getData());
     }
 
