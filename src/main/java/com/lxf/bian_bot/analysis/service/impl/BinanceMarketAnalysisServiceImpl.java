@@ -2,14 +2,9 @@ package com.lxf.bian_bot.analysis.service.impl;
 
 import com.lxf.bian_bot.analysis.Strategy;
 import com.lxf.bian_bot.analysis.StrategyRegistry;
-import com.lxf.bian_bot.analysis.enums.TradingSignal;
 import com.lxf.bian_bot.analysis.service.BinanceMarketAnalysisService;
-import com.lxf.bian_bot.cache.KlineCache;
 import com.lxf.bian_bot.config.model.StrategyConfig;
-import com.lxf.bian_bot.model.BinanceKline;
 import com.lxf.bian_bot.model.TradingDecision;
-import java.math.BigDecimal;
-import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
@@ -19,16 +14,12 @@ import org.springframework.validation.annotation.Validated;
 @Validated
 public class BinanceMarketAnalysisServiceImpl implements BinanceMarketAnalysisService {
 
-    private static final String KLINE_INTERVAL = "1m";
-    private final KlineCache klineCache;
     private final StrategyConfig strategyConfig;
     private final StrategyRegistry strategyRegistry;
 
     public BinanceMarketAnalysisServiceImpl(
-            KlineCache klineCache,
             StrategyConfig strategyConfig,
             StrategyRegistry strategyRegistry) {
-        this.klineCache = klineCache;
         this.strategyConfig = strategyConfig;
         this.strategyRegistry = strategyRegistry;
     }
@@ -45,27 +36,29 @@ public class BinanceMarketAnalysisServiceImpl implements BinanceMarketAnalysisSe
             return buildWaitDecision(symbol, "未找到对应 Strategy");
         }
 
-        /*
-         * 外部驱动只负责周期性询问 Strategy。
-         * 是否真正执行，由 Strategy 自己决定。
-         */
+        // 外部驱动只负责周期性询问，策略自己决定当前是否执行。
         if (!strategy.shouldExecute(symbol)) {
             log.debug("Strategy 暂不需要执行: symbol={}, strategy={}", symbol, strategyName);
             return buildWaitDecision(symbol, "Strategy 当前未到执行时间");
         }
 
-        List<BinanceKline> klines = klineCache.get(symbol, KLINE_INTERVAL);
-        if (klines.isEmpty()) {
-            log.warn("{} KlineCache 中没有 K线数据", symbol);
-            return buildWaitDecision(symbol, "KlineCache 中没有 K线数据");
+        // 最终交易决策由 Strategy 自己生成。
+        TradingDecision decision = strategy.decide(symbol);
+        if (decision == null) {
+            log.warn("Strategy 未返回交易决策: symbol={}, strategy={}", symbol, strategyName);
+            return buildWaitDecision(symbol, "Strategy 未返回交易决策");
         }
 
-        BigDecimal currentPrice = klines.getLast().getClosePrice();
+        log.info("市场分析完成: symbol={}, strategy={}, decision={}, direction={}, entryPrice={}, tp={}, sl={}, reason={}",
+                symbol,
+                strategyName,
+                decision.getDecision(),
+                decision.getDirection(),
+                decision.getEntryPrice(),
+                decision.getTakeProfitPrice(),
+                decision.getStopLossPrice(),
+                decision.getReason());
 
-        TradingSignal signal = strategy.execute(symbol);
-        TradingDecision decision = buildDecision(symbol, currentPrice, signal, strategyName);
-
-        log.info("市场分析完成: symbol={}, strategy={}, decision={}", symbol, strategyName, decision.getDecision());
         return decision;
     }
 
@@ -73,35 +66,7 @@ public class BinanceMarketAnalysisServiceImpl implements BinanceMarketAnalysisSe
         return TradingDecision.builder()
                 .symbol(symbol)
                 .decision(TradingDecision.DecisionType.WAIT)
-                .currentPrice(null)
                 .reason(reason)
-                .build();
-    }
-
-    private TradingDecision buildDecision(
-            String symbol,
-            BigDecimal currentPrice,
-            TradingSignal signal,
-            String strategyName) {
-
-        TradingDecision.DecisionType decisionType = switch (signal) {
-            case LONG -> TradingDecision.DecisionType.ENTER_LONG;
-            case SHORT -> TradingDecision.DecisionType.ENTER_SHORT;
-            case WAIT -> TradingDecision.DecisionType.WAIT;
-        };
-
-        TradingDecision.Direction direction = switch (signal) {
-            case LONG -> TradingDecision.Direction.LONG;
-            case SHORT -> TradingDecision.Direction.SHORT;
-            case WAIT -> null;
-        };
-
-        return TradingDecision.builder()
-                .symbol(symbol)
-                .decision(decisionType)
-                .direction(direction)
-                .currentPrice(currentPrice)
-                .reason("策略: " + strategyName + ", 信号: " + signal)
                 .build();
     }
 }
