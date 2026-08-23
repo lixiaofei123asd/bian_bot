@@ -1,5 +1,6 @@
 package com.lxf.bian_bot.deepseek;
 
+import com.lxf.bian_bot.analysis.enums.IndicatorAction;
 import com.lxf.bian_bot.analysis.enums.IndicatorSignal;
 import java.math.BigDecimal;
 import lombok.Data;
@@ -12,48 +13,33 @@ import lombok.Data;
 @Data
 public class DeepSeekIndicatorResult {
 
-    /**
-     * 分析方向：UP、DOWN、NEUTRAL。
-     */
+    /** 分析方向：UP、DOWN、NEUTRAL。 */
     private IndicatorSignal signal;
 
-    /**
-     * 置信度，0~100。
-     */
+    /** 建议动作：OPEN、HOLD、CLOSE、WAIT、ADJUST_PROTECTION。 */
+    private IndicatorAction action;
+
+    /** 置信度，0~100。 */
     private Integer confidence;
 
-    /**
-     * 最小建议入场价格。
-     */
+    /** 最小建议入场价格。 */
     private BigDecimal minEntryPrice;
 
-    /**
-     * 最大建议入场价格。
-     */
+    /** 最大建议入场价格。 */
     private BigDecimal maxEntryPrice;
 
-    /**
-     * 建议入场价格，可以为空。
-     */
+    /** 建议入场价格，可以为空。 */
     private BigDecimal entryPrice;
 
-    /**
-     * 建议止盈价格。
-     */
+    /** 建议止盈价格。 */
     private BigDecimal takeProfitPrice;
 
-    /**
-     * 建议止损价格。
-     */
+    /** 建议止损价格。 */
     private BigDecimal stopLossPrice;
 
-    /**
-     * 建议使用的 USDT 金额。
-     */
+    /** 建议使用的 USDT 金额。 */
     private BigDecimal usdtAmount;
 
-    /**
-     * 分析原因。
-     */
+    /** 分析原因。 */
     private String reason;
 }
