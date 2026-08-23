@@ -7,7 +7,6 @@ import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.NotionalAndLeverageBracketsResponse1;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.NotionalAndLeverageBracketsResponse1Inner;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.NotionalAndLeverageBracketsResponse1InnerBracketsInner;
-import com.lxf.bian_bot.model.SymbolRule;
 import jakarta.annotation.PostConstruct;
 import java.math.BigDecimal;
 import java.util.List;

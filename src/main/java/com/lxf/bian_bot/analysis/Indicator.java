@@ -1,5 +1,7 @@
 package com.lxf.bian_bot.analysis;
 
+import com.lxf.bian_bot.analysis.model.IndicatorResult;
+
 public interface Indicator {
 
     // 获取指标名称

@@ -1,6 +1,6 @@
 package com.lxf.bian_bot.repository.impl;
 
-import com.lxf.bian_bot.model.BinanceKline;
+import com.lxf.bian_bot.thirdparty.binance.model.BinanceKline;
 import com.lxf.bian_bot.repository.KlineRepository;
 import jakarta.annotation.PostConstruct;
 import java.io.IOException;

@@ -2,7 +2,7 @@ package com.lxf.bian_bot.cache;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
-import com.lxf.bian_bot.model.BinanceKline;
+import com.lxf.bian_bot.thirdparty.binance.model.BinanceKline;
 import com.lxf.bian_bot.repository.KlineRepository;
 import java.util.ArrayList;
 import java.util.Collections;

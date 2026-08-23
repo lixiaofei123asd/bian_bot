@@ -1,14 +1,14 @@
 package com.lxf.bian_bot.analysis.strategy;
 
 import com.lxf.bian_bot.analysis.Indicator;
-import com.lxf.bian_bot.analysis.IndicatorResult;
+import com.lxf.bian_bot.analysis.model.IndicatorResult;
 import com.lxf.bian_bot.analysis.Strategy;
 import com.lxf.bian_bot.analysis.enums.IndicatorSignal;
 import com.lxf.bian_bot.analysis.enums.TradingSignal;
 import com.lxf.bian_bot.cache.TickerCache;
-import com.lxf.bian_bot.config.model.StrategyConfig;
+import com.lxf.bian_bot.config.strategy.StrategyConfig;
 import com.lxf.bian_bot.model.TradingDecision;
-import com.lxf.bian_bot.service.BinanceWebSocketStreamsService;
+import com.lxf.bian_bot.thirdparty.binance.service.BinanceWebSocketStreamsService;
 import com.lxf.bian_bot.trading.service.BinanceTradingService;
 import java.time.Duration;
 import java.time.Instant;

@@ -1,6 +1,6 @@
 package com.lxf.bian_bot.cache;
 
-import com.lxf.bian_bot.model.BinanceBookTicker;
+import com.lxf.bian_bot.thirdparty.binance.model.BinanceBookTicker;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 

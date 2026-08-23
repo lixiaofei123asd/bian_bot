@@ -1,7 +1,7 @@
 package com.lxf.bian_bot.analysis.indicator;
 
 import com.lxf.bian_bot.analysis.Indicator;
-import com.lxf.bian_bot.analysis.IndicatorResult;
+import com.lxf.bian_bot.analysis.model.IndicatorResult;
 import com.lxf.bian_bot.analysis.MarketDataProvider;
 import com.lxf.bian_bot.analysis.enums.IndicatorSignal;
 import com.lxf.bian_bot.model.BinanceSecondKline;

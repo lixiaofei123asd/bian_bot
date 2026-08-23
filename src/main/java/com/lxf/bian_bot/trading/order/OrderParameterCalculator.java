@@ -2,7 +2,7 @@ package com.lxf.bian_bot.trading.order;
 
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.Side;
 import com.lxf.bian_bot.config.SymbolRuleCache;
-import com.lxf.bian_bot.model.SymbolRule;
+import com.lxf.bian_bot.config.SymbolRule;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import org.springframework.stereotype.Component;

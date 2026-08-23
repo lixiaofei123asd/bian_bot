@@ -1,8 +1,8 @@
 package com.lxf.bian_bot.web;
 
 import com.lxf.bian_bot.cache.KlineCache;
-import com.lxf.bian_bot.config.BinanceProperties;
-import com.lxf.bian_bot.model.BinanceKline;
+import com.lxf.bian_bot.config.binance.BinanceProperties;
+import com.lxf.bian_bot.thirdparty.binance.model.BinanceKline;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;

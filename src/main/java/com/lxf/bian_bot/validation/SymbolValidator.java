@@ -2,7 +2,7 @@ package com.lxf.bian_bot.validation;
 
 import com.lxf.bian_bot.analysis.Strategy;
 import com.lxf.bian_bot.analysis.StrategyRegistry;
-import com.lxf.bian_bot.config.model.StrategyConfig;
+import com.lxf.bian_bot.config.strategy.StrategyConfig;
 import jakarta.validation.ConstraintValidator;
 import jakarta.validation.ConstraintValidatorContext;
 import java.util.Locale;

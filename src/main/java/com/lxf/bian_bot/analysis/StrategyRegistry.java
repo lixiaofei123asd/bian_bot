@@ -1,18 +1,21 @@
 package com.lxf.bian_bot.analysis;
 
+import jakarta.annotation.PostConstruct;
 import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.InitializingBean;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.ClassPathScanningCandidateComponentProvider;
 import org.springframework.core.type.filter.AssignableTypeFilter;
 import org.springframework.stereotype.Component;
 
+/**
+ * 策略注册表，扫描所有策略并放在map中
+ */
 @Slf4j
 @Component
-public class StrategyRegistry implements InitializingBean {
+public class StrategyRegistry {
 
     private static final String STRATEGY_PACKAGE = "com.lxf.bian_bot.analysis.strategy";
 
@@ -23,8 +26,9 @@ public class StrategyRegistry implements InitializingBean {
         this.applicationContext = applicationContext;
     }
 
-    @Override
-    public void afterPropertiesSet() {
+    @PostConstruct
+    public void initStrategyRegistry() {
+        log.info("开始初始化 策略列表...");
         ClassPathScanningCandidateComponentProvider scanner = new ClassPathScanningCandidateComponentProvider(false);
         scanner.addIncludeFilter(new AssignableTypeFilter(Strategy.class));
 

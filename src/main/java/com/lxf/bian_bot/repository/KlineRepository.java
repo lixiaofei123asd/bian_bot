@@ -1,6 +1,6 @@
 package com.lxf.bian_bot.repository;
 
-import com.lxf.bian_bot.model.BinanceKline;
+import com.lxf.bian_bot.thirdparty.binance.model.BinanceKline;
 import java.util.List;
 
 public interface KlineRepository {

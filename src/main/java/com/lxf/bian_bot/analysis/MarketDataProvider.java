@@ -1,6 +1,6 @@
 package com.lxf.bian_bot.analysis;
 
-import com.lxf.bian_bot.model.BinanceKline;
+import com.lxf.bian_bot.thirdparty.binance.model.BinanceKline;
 import com.lxf.bian_bot.model.BinanceSecondKline;
 import java.util.List;
 

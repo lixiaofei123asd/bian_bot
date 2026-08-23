@@ -1,11 +1,11 @@
 package com.lxf.bian_bot.cache;
 
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.Interval;
-import com.lxf.bian_bot.config.BinanceProperties;
+import com.lxf.bian_bot.config.binance.BinanceProperties;
 import com.lxf.bian_bot.config.SymbolRuleCache;
-import com.lxf.bian_bot.model.BinanceKline;
+import com.lxf.bian_bot.thirdparty.binance.model.BinanceKline;
 import com.lxf.bian_bot.repository.KlineRepository;
-import com.lxf.bian_bot.service.BinanceMarketService;
+import com.lxf.bian_bot.thirdparty.binance.service.BinanceMarketService;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;

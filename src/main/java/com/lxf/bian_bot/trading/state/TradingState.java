@@ -1,8 +1,8 @@
 package com.lxf.bian_bot.trading.state;
 
-import com.lxf.bian_bot.model.AccountInfo;
-import com.lxf.bian_bot.model.OrderInfo;
-import com.lxf.bian_bot.model.PositionInfo;
+import com.lxf.bian_bot.thirdparty.binance.model.AccountInfo;
+import com.lxf.bian_bot.thirdparty.binance.model.OrderInfo;
+import com.lxf.bian_bot.thirdparty.binance.model.PositionInfo;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;

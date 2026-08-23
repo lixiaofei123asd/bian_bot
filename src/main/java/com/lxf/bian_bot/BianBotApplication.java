@@ -1,8 +1,8 @@
 package com.lxf.bian_bot;
 
-import com.lxf.bian_bot.config.BinanceProperties;
-import com.lxf.bian_bot.config.StrategyProperties;
-import com.lxf.bian_bot.config.TradingProperties;
+import com.lxf.bian_bot.config.binance.BinanceProperties;
+import com.lxf.bian_bot.config.strategy.StrategyProperties;
+import com.lxf.bian_bot.config.trading.TradingProperties;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;

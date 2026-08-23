@@ -2,18 +2,19 @@ package com.lxf.bian_bot.analysis.indicator;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lxf.bian_bot.analysis.Indicator;
-import com.lxf.bian_bot.analysis.IndicatorResult;
+import com.lxf.bian_bot.analysis.model.IndicatorResult;
 import com.lxf.bian_bot.analysis.MarketDataProvider;
 import com.lxf.bian_bot.analysis.enums.IndicatorAction;
 import com.lxf.bian_bot.analysis.enums.IndicatorSignal;
-import com.lxf.bian_bot.deepseek.DeepSeekClient;
-import com.lxf.bian_bot.deepseek.DeepSeekIndicatorResult;
-import com.lxf.bian_bot.model.Binance24hTicker;
-import com.lxf.bian_bot.model.BinanceBookTicker;
-import com.lxf.bian_bot.model.BinanceMarkPrice;
-import com.lxf.bian_bot.model.BinanceOrderBook;
-import com.lxf.bian_bot.model.BinancePriceTicker;
-import com.lxf.bian_bot.model.BinanceRecentTrade;
+import com.lxf.bian_bot.thirdparty.binance.service.BinanceMarketService;
+import com.lxf.bian_bot.thirdparty.deepseek.DeepSeekClient;
+import com.lxf.bian_bot.thirdparty.deepseek.DeepSeekIndicatorResult;
+import com.lxf.bian_bot.thirdparty.binance.model.Binance24hTicker;
+import com.lxf.bian_bot.thirdparty.binance.model.BinanceBookTicker;
+import com.lxf.bian_bot.thirdparty.binance.model.BinanceMarkPrice;
+import com.lxf.bian_bot.thirdparty.binance.model.BinanceOrderBook;
+import com.lxf.bian_bot.thirdparty.binance.model.BinancePriceTicker;
+import com.lxf.bian_bot.thirdparty.binance.model.BinanceRecentTrade;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -36,7 +37,7 @@ public class IndicatorDeepSeek implements Indicator {
     private static final long RECENT_TRADE_LIMIT = 100L;
 
     private final MarketDataProvider marketDataProvider;
-    private final com.lxf.bian_bot.service.BinanceMarketService marketService;
+    private final BinanceMarketService marketService;
     private final DeepSeekClient deepSeekClient;
     private final ObjectMapper objectMapper;
 

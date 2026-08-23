@@ -9,7 +9,7 @@ import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.NewOrderRespType;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.QueryOrderResponse;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.Side;
-import com.lxf.bian_bot.model.OrderType;
+import com.lxf.bian_bot.thirdparty.binance.enums.OrderType;
 import com.lxf.bian_bot.trading.order.OrderParameterCalculator;
 import com.lxf.bian_bot.trading.state.TradingState;
 import java.util.Map;
