@@ -8,21 +8,10 @@ logging:
   level:
     root: INFO
 
-scheduling:
-  task:
-    cron: "0/10 * * * * ?"
-
 # ==================== 策略配置 ====================
 strategy:
   # 每个币种对应一个策略
   symbols: {}
-
-  # 需要定时执行的 Strategy 的统一调度配置
-  # 默认 5 分钟执行一次
-  # 3 分钟：180000
-  # 5 分钟：300000
-  scheduling:
-    interval-ms: 300000
 
 # ==================== 交易配置 ====================
 trading:
