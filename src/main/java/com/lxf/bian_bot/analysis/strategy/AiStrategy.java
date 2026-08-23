@@ -7,6 +7,7 @@ import com.lxf.bian_bot.analysis.enums.IndicatorAction;
 import com.lxf.bian_bot.analysis.enums.IndicatorSignal;
 import com.lxf.bian_bot.analysis.enums.TradingSignal;
 import com.lxf.bian_bot.analysis.indicator.IndicatorDeepSeek;
+import com.lxf.bian_bot.model.AccountInfo;
 import com.lxf.bian_bot.model.BinancePriceTicker;
 import com.lxf.bian_bot.model.OrderInfo;
 import com.lxf.bian_bot.model.PositionInfo;
@@ -105,8 +106,11 @@ public class AiStrategy implements Strategy {
 
     private Map<String, Object> buildStrategyContext(String symbol) {
         Map<String, Object> context = new LinkedHashMap<>();
+        AccountInfo account = tradingState.getAccountInfo();
         PositionInfo position = tradingState.getPosition(symbol);
         List<OrderInfo> openOrders = tradingState.getOpenOrders(symbol);
+
+        context.put("account", account);
         context.put("position", position);
         context.put("openOrders", openOrders);
         context.put("executionState", tradingState.getExecutionState(symbol));
