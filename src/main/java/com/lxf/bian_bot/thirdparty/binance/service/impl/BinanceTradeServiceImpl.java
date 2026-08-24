@@ -24,6 +24,7 @@ import com.lxf.bian_bot.thirdparty.binance.service.BinanceTradeService;
 import com.lxf.bian_bot.trading.order.OrderParameterCalculator;
 import com.lxf.bian_bot.trading.service.PendingOrderProtectionService;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.List;
 import java.util.Objects;
 import lombok.extern.slf4j.Slf4j;
@@ -48,9 +49,7 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
     @Override
     public List<PositionInfo> getPositions() {
         ApiResponse<PositionInformationV2Response> response = api.positionInformationV2(null, null);
-        if (response.getData() == null || response.getData().isEmpty()) {
-            return List.of();
-        }
+        if (response.getData() == null || response.getData().isEmpty()) return List.of();
         return response.getData().stream().map(this::toPositionInfo).toList();
     }
 
@@ -88,7 +87,7 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
         return LeverageInfo.builder()
                 .symbol(data.getSymbol())
                 .leverage(data.getLeverage().intValue())
-                .maxNotionalValue(Double.parseDouble(data.getMaxNotionalValue()))
+                .maxNotionalValue(parseBigDecimal(data.getMaxNotionalValue()))
                 .build();
     }
 
@@ -154,10 +153,8 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
                 symbol, price, Side.BUY.equals(side));
         BigDecimal normalizedQuantity = orderParameterCalculator.normalizeLimitQuantity(
                 symbol, quantity, normalizedPrice);
-        BigDecimal normalizedTp = orderParameterCalculator.normalizeTriggerPrice(
-                symbol, tp, side, true);
-        BigDecimal normalizedSl = orderParameterCalculator.normalizeTriggerPrice(
-                symbol, sl, side, false);
+        BigDecimal normalizedTp = orderParameterCalculator.normalizeTriggerPrice(symbol, tp, side, true);
+        BigDecimal normalizedSl = orderParameterCalculator.normalizeTriggerPrice(symbol, sl, side, false);
 
         NewOrderRequest entryRequest = new NewOrderRequest();
         entryRequest.type(OrderType.LIMIT.name());
@@ -184,9 +181,6 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
         NewOrderResponse entryData = entryResponse.getData();
         OrderInfo entryOrder = toOrderInfo(entryData);
 
-        log.info("限价开仓订单已提交: orderId={}, status={}, executedQty={}, avgPrice={}",
-                entryData.getOrderId(), entryData.getStatus(), entryData.getExecutedQty(), entryData.getAvgPrice());
-
         BigDecimal profitAmount = Side.BUY.equals(side)
                 ? normalizedTp.subtract(normalizedPrice).multiply(normalizedQuantity)
                 : normalizedPrice.subtract(normalizedTp).multiply(normalizedQuantity);
@@ -194,12 +188,10 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
                 ? normalizedPrice.subtract(normalizedSl).multiply(normalizedQuantity)
                 : normalizedSl.subtract(normalizedPrice).multiply(normalizedQuantity);
 
-        pendingOrderProtectionService.register(symbol, entryData.getOrderId(), side,
-                profitAmount.doubleValue(), lossAmount.doubleValue());
+        pendingOrderProtectionService.register(symbol, entryData.getOrderId(), side, profitAmount, lossAmount);
 
         log.info("限价开仓保护任务已等待成交: symbol={}, orderId={}, status={}, profitAmount={}, lossAmount={}",
                 symbol, entryData.getOrderId(), entryData.getStatus(), profitAmount, lossAmount);
-        log.info("=========================================");
         return entryOrder;
     }
 
@@ -212,20 +204,13 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
             throw new IllegalArgumentException("盈利和亏损金额必须大于 0：profitAmount=" + profitAmount + ", lossAmount=" + lossAmount);
         }
 
-        BigDecimal normalizedPrice = orderParameterCalculator.normalizeEntryPrice(
-                symbol, price, Side.BUY.equals(side));
-        BigDecimal normalizedQuantity = orderParameterCalculator.normalizeLimitQuantity(
-                symbol, quantity, normalizedPrice);
+        BigDecimal normalizedPrice = orderParameterCalculator.normalizeEntryPrice(symbol, price, Side.BUY.equals(side));
+        BigDecimal normalizedQuantity = orderParameterCalculator.normalizeLimitQuantity(symbol, quantity, normalizedPrice);
 
-        BigDecimal tp;
-        BigDecimal sl;
-        if (side == Side.BUY) {
-            tp = normalizedPrice.add(profitAmount.divide(normalizedQuantity, 20, java.math.RoundingMode.HALF_UP));
-            sl = normalizedPrice.subtract(lossAmount.divide(normalizedQuantity, 20, java.math.RoundingMode.HALF_UP));
-        } else {
-            tp = normalizedPrice.subtract(profitAmount.divide(normalizedQuantity, 20, java.math.RoundingMode.HALF_UP));
-            sl = normalizedPrice.add(lossAmount.divide(normalizedQuantity, 20, java.math.RoundingMode.HALF_UP));
-        }
+        BigDecimal profitPerUnit = profitAmount.divide(normalizedQuantity, 20, RoundingMode.HALF_UP);
+        BigDecimal lossPerUnit = lossAmount.divide(normalizedQuantity, 20, RoundingMode.HALF_UP);
+        BigDecimal tp = side == Side.BUY ? normalizedPrice.add(profitPerUnit) : normalizedPrice.subtract(profitPerUnit);
+        BigDecimal sl = side == Side.BUY ? normalizedPrice.subtract(lossPerUnit) : normalizedPrice.add(lossPerUnit);
 
         log.info("按照修正后的实际下单价格和数量计算止盈止损: symbol={}, price={}, quantity={}, profitAmount={}, lossAmount={}, tp={}, sl={}",
                 symbol, normalizedPrice, normalizedQuantity, profitAmount, lossAmount, tp, sl);
@@ -244,21 +229,18 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
                     + profitPercentage + ", lossPercentage=" + lossPercentage);
         }
 
-        BigDecimal normalizedPrice = orderParameterCalculator.normalizeEntryPrice(
-                symbol, price, Side.BUY.equals(side));
-        BigDecimal normalizedQuantity = orderParameterCalculator.normalizeLimitQuantity(
-                symbol, quantity, normalizedPrice);
-
+        BigDecimal normalizedPrice = orderParameterCalculator.normalizeEntryPrice(symbol, price, Side.BUY.equals(side));
+        BigDecimal normalizedQuantity = orderParameterCalculator.normalizeLimitQuantity(symbol, quantity, normalizedPrice);
         BigDecimal hundred = BigDecimal.valueOf(100);
-        BigDecimal tp;
-        BigDecimal sl;
-        if (side == Side.BUY) {
-            tp = normalizedPrice.multiply(BigDecimal.ONE.add(profitPercentage.divide(hundred, 20, java.math.RoundingMode.HALF_UP)));
-            sl = normalizedPrice.multiply(BigDecimal.ONE.subtract(lossPercentage.divide(hundred, 20, java.math.RoundingMode.HALF_UP)));
-        } else {
-            tp = normalizedPrice.multiply(BigDecimal.ONE.subtract(profitPercentage.divide(hundred, 20, java.math.RoundingMode.HALF_UP)));
-            sl = normalizedPrice.multiply(BigDecimal.ONE.add(lossPercentage.divide(hundred, 20, java.math.RoundingMode.HALF_UP)));
-        }
+        BigDecimal profitRate = profitPercentage.divide(hundred, 20, RoundingMode.HALF_UP);
+        BigDecimal lossRate = lossPercentage.divide(hundred, 20, RoundingMode.HALF_UP);
+
+        BigDecimal tp = side == Side.BUY
+                ? normalizedPrice.multiply(BigDecimal.ONE.add(profitRate))
+                : normalizedPrice.multiply(BigDecimal.ONE.subtract(profitRate));
+        BigDecimal sl = side == Side.BUY
+                ? normalizedPrice.multiply(BigDecimal.ONE.subtract(lossRate))
+                : normalizedPrice.multiply(BigDecimal.ONE.add(lossRate));
 
         log.info("按照盈亏百分比计算止盈止损: symbol={}, profitPercentage={}%, lossPercentage={}%, tp={}, sl={}",
                 symbol, profitPercentage, lossPercentage, tp, sl);
@@ -269,15 +251,14 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
 
     @Override
     public OrderInfo closeMarketOrder(String symbol) {
-        PositionInfo positionInfo = this.getPositionInfo(symbol);
-        BigDecimal positionAmt = BigDecimal.valueOf(positionInfo.getPositionAmt());
-        if (positionAmt.compareTo(BigDecimal.ZERO) == 0) {
+        PositionInfo positionInfo = getPositionInfo(symbol);
+        BigDecimal positionAmt = positionInfo.getPositionAmt();
+        if (positionAmt == null || positionAmt.compareTo(BigDecimal.ZERO) == 0) {
             throw new IllegalStateException("当前没有可平仓位：" + symbol);
         }
 
         Side closeSide = positionAmt.compareTo(BigDecimal.ZERO) > 0 ? Side.SELL : Side.BUY;
-        BigDecimal quantity = orderParameterCalculator.normalizeMarketQuantity(
-                symbol, positionAmt.abs(), BigDecimal.ZERO);
+        BigDecimal quantity = orderParameterCalculator.normalizeMarketQuantity(symbol, positionAmt.abs(), BigDecimal.ZERO);
 
         log.info("========== 市价平仓 ==========");
         log.info("交易对：{}", symbol);
@@ -298,22 +279,22 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
     private PositionInfo toPositionInfo(PositionInformationV2ResponseInner data) {
         return PositionInfo.builder()
                 .symbol(data.getSymbol())
-                .positionAmt(parseDouble(data.getPositionAmt()))
-                .entryPrice(parseDouble(data.getEntryPrice()))
-                .breakEvenPrice(parseDouble(data.getBreakEvenPrice()))
-                .markPrice(parseDouble(data.getMarkPrice()))
-                .notional(parseDouble(data.getNotional()))
-                .unrealizedProfit(parseDouble(data.getUnRealizedProfit()))
+                .positionAmt(parseBigDecimal(data.getPositionAmt()))
+                .entryPrice(parseBigDecimal(data.getEntryPrice()))
+                .breakEvenPrice(parseBigDecimal(data.getBreakEvenPrice()))
+                .markPrice(parseBigDecimal(data.getMarkPrice()))
+                .notional(parseBigDecimal(data.getNotional()))
+                .unrealizedProfit(parseBigDecimal(data.getUnRealizedProfit()))
                 .leverage(parseInt(data.getLeverage()))
                 .marginType(data.getMarginType())
                 .positionSide(data.getPositionSide())
-                .liquidationPrice(parseDouble(data.getLiquidationPrice()))
+                .liquidationPrice(parseBigDecimal(data.getLiquidationPrice()))
                 .autoAddMargin(Boolean.parseBoolean(data.getIsAutoAddMargin()))
                 .build();
     }
 
-    private double parseDouble(String value) {
-        return value == null || value.isBlank() ? 0D : Double.parseDouble(value);
+    private BigDecimal parseBigDecimal(String value) {
+        return value == null || value.isBlank() ? BigDecimal.ZERO : new BigDecimal(value);
     }
 
     private int parseInt(String value) {
@@ -322,9 +303,7 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
 
     private OrderInfo newOrder(NewOrderRequest request, String message) {
         ApiResponse<NewOrderResponse> response = api.newOrder(request);
-        if (response.getStatusCode() != 200 || response.getData() == null) {
-            throw new RuntimeException(message);
-        }
+        if (response.getStatusCode() != 200 || response.getData() == null) throw new RuntimeException(message);
         return toOrderInfo(response.getData());
     }
 
@@ -335,10 +314,10 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
                 .clientOrderId(data.getClientOrderId())
                 .side(data.getSide())
                 .type(data.getType())
-                .origQty(parseDouble(data.getOrigQty()))
-                .executedQty(parseDouble(data.getExecutedQty()))
-                .avgPrice(parseDouble(data.getAvgPrice()))
-                .price(parseDouble(data.getPrice()))
+                .origQty(parseBigDecimal(data.getOrigQty()))
+                .executedQty(parseBigDecimal(data.getExecutedQty()))
+                .avgPrice(parseBigDecimal(data.getAvgPrice()))
+                .price(parseBigDecimal(data.getPrice()))
                 .status(data.getStatus())
                 .reduceOnly(data.getReduceOnly())
                 .positionSide(data.getPositionSide())
