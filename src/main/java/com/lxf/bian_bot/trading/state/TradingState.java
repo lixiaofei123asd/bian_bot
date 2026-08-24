@@ -4,6 +4,7 @@ import com.lxf.bian_bot.thirdparty.binance.model.AccountInfo;
 import com.lxf.bian_bot.thirdparty.binance.model.OrderInfo;
 import com.lxf.bian_bot.thirdparty.binance.model.PositionInfo;
 import com.lxf.bian_bot.thirdparty.binance.model.ProtectionInfo;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
@@ -18,6 +19,8 @@ import org.springframework.stereotype.Component;
 public class TradingState {
 
     private static final ZoneId ACCOUNT_ZONE = ZoneId.of("Asia/Shanghai");
+    private static final BigDecimal ZERO = BigDecimal.ZERO;
+    private static final BigDecimal POSITION_EPSILON = new BigDecimal("0.00000001");
 
     private volatile AccountInfo accountInfo;
     private final Map<String, PositionInfo> positions = new ConcurrentHashMap<>();
@@ -27,12 +30,16 @@ public class TradingState {
     private final Map<String, TradingExecutionState> executionStates = new ConcurrentHashMap<>();
 
     private volatile LocalDate realizedPnlDate = LocalDate.now(ACCOUNT_ZONE);
-    private volatile double todayRealizedPnl;
+    private volatile BigDecimal todayRealizedPnl = ZERO;
 
-    public void updateAccount(AccountInfo accountInfo) { if (accountInfo != null) this.accountInfo = accountInfo; }
+    public void updateAccount(AccountInfo accountInfo) {
+        if (accountInfo != null) this.accountInfo = accountInfo;
+    }
 
     public void updatePosition(PositionInfo positionInfo) {
-        if (positionInfo != null && positionInfo.getSymbol() != null) positions.put(positionInfo.getSymbol(), positionInfo);
+        if (positionInfo != null && positionInfo.getSymbol() != null) {
+            positions.put(positionInfo.getSymbol(), positionInfo);
+        }
     }
 
     public void updateProtection(ProtectionInfo protectionInfo) {
@@ -40,16 +47,18 @@ public class TradingState {
         protections.put(protectionInfo.getSymbol(), protectionInfo);
     }
 
-    public ProtectionInfo getProtection(String symbol) { return protections.get(symbol); }
+    public ProtectionInfo getProtection(String symbol) {
+        return protections.get(symbol);
+    }
 
-    public void updateTakeProfit(String symbol, double price, long algoId) {
+    public void updateTakeProfit(String symbol, BigDecimal price, long algoId) {
         ProtectionInfo protection = protections.computeIfAbsent(symbol,
                 key -> ProtectionInfo.builder().symbol(key).build());
         protection.setTakeProfitPrice(price);
         protection.setTakeProfitAlgoId(algoId);
     }
 
-    public void updateStopLoss(String symbol, double price, long algoId) {
+    public void updateStopLoss(String symbol, BigDecimal price, long algoId) {
         ProtectionInfo protection = protections.computeIfAbsent(symbol,
                 key -> ProtectionInfo.builder().symbol(key).build());
         protection.setStopLossPrice(price);
@@ -59,7 +68,7 @@ public class TradingState {
     public void clearTakeProfit(String symbol) {
         ProtectionInfo protection = protections.get(symbol);
         if (protection == null) return;
-        protection.setTakeProfitPrice(0D);
+        protection.setTakeProfitPrice(ZERO);
         protection.setTakeProfitAlgoId(0L);
         removeProtectionIfEmpty(symbol, protection);
     }
@@ -67,43 +76,40 @@ public class TradingState {
     public void clearStopLoss(String symbol) {
         ProtectionInfo protection = protections.get(symbol);
         if (protection == null) return;
-        protection.setStopLossPrice(0D);
+        protection.setStopLossPrice(ZERO);
         protection.setStopLossAlgoId(0L);
         removeProtectionIfEmpty(symbol, protection);
     }
 
-    public void clearProtection(String symbol) { if (symbol != null) protections.remove(symbol); }
+    public void clearProtection(String symbol) {
+        if (symbol != null) protections.remove(symbol);
+    }
 
     private void removeProtectionIfEmpty(String symbol, ProtectionInfo protection) {
-        if (Double.compare(protection.getTakeProfitPrice(), 0D) == 0
-                && Double.compare(protection.getStopLossPrice(), 0D) == 0) {
+        if (isZero(protection.getTakeProfitPrice()) && isZero(protection.getStopLossPrice())) {
             protections.remove(symbol, protection);
         }
     }
 
-    /**
-     * 根据成交事件增量修正持仓数量。
-     *
-     * <p>主要用于 reduceOnly 平仓成交。在 User Data Stream 的 ACCOUNT_UPDATE 尚未到达，
-     * 或某次事件没有及时刷新 TradingState 时，ORDER_TRADE_UPDATE 仍然可以保证本地状态及时归零。</p>
-     */
+    /** 根据成交事件增量修正持仓数量。 */
     public synchronized PositionInfo applyTradeToPosition(String symbol, String side,
-                                                            boolean reduceOnly, double lastFilledQty) {
-        if (!reduceOnly || symbol == null || symbol.isBlank() || lastFilledQty <= 0D) return null;
+                                                           boolean reduceOnly, BigDecimal lastFilledQty) {
+        if (!reduceOnly || symbol == null || symbol.isBlank()
+                || lastFilledQty == null || lastFilledQty.compareTo(ZERO) <= 0) return null;
 
         PositionInfo position = positions.get(symbol);
-        if (position == null || Double.compare(position.getPositionAmt(), 0D) == 0) return position;
+        if (position == null || isZero(position.getPositionAmt())) return position;
 
-        double amount = position.getPositionAmt();
+        BigDecimal amount = position.getPositionAmt();
         if ("BUY".equalsIgnoreCase(side)) {
-            amount += lastFilledQty;
+            amount = amount.add(lastFilledQty);
         } else if ("SELL".equalsIgnoreCase(side)) {
-            amount -= lastFilledQty;
+            amount = amount.subtract(lastFilledQty);
         } else {
             return position;
         }
 
-        if (Math.abs(amount) < 0.00000001D) amount = 0D;
+        if (amount.abs().compareTo(POSITION_EPSILON) < 0) amount = ZERO;
         position.setPositionAmt(amount);
         positions.put(symbol, position);
         return position;
@@ -114,8 +120,13 @@ public class TradingState {
         if (orderInfos != null) orderInfos.forEach(this::updateOrder);
     }
 
-    public void updateOrder(OrderInfo orderInfo) { if (orderInfo != null) orders.put(orderInfo.getOrderId(), orderInfo); }
-    public void removeOrder(long orderId) { orders.remove(orderId); }
+    public void updateOrder(OrderInfo orderInfo) {
+        if (orderInfo != null) orders.put(orderInfo.getOrderId(), orderInfo);
+    }
+
+    public void removeOrder(long orderId) {
+        orders.remove(orderId);
+    }
 
     public int clearSymbolOrders(String symbol) {
         if (symbol == null || symbol.isBlank()) return 0;
@@ -127,36 +138,43 @@ public class TradingState {
         return removed;
     }
 
-    public PositionInfo getPosition(String symbol) { return positions.get(symbol); }
+    public PositionInfo getPosition(String symbol) {
+        return positions.get(symbol);
+    }
 
     public List<OrderInfo> getOpenOrders(String symbol) {
-        return orders.values().stream().filter(order -> order != null && symbol.equals(order.getSymbol())).toList();
+        return orders.values().stream()
+                .filter(order -> order != null && symbol.equals(order.getSymbol()))
+                .toList();
     }
 
     public boolean isOrderSubmitting(String symbol) { return Boolean.TRUE.equals(orderSubmitting.get(symbol)); }
     public boolean startOrderSubmitting(String symbol) { return orderSubmitting.putIfAbsent(symbol, true) == null; }
     public void finishOrderSubmitting(String symbol) { orderSubmitting.remove(symbol); }
 
-    public TradingExecutionState getExecutionState(String symbol) { return executionStates.getOrDefault(symbol, TradingExecutionState.READY); }
+    public TradingExecutionState getExecutionState(String symbol) {
+        return executionStates.getOrDefault(symbol, TradingExecutionState.READY);
+    }
 
     public void updateExecutionState(String symbol, TradingExecutionState state) {
         if (symbol != null && state != null) executionStates.put(symbol, state);
     }
 
     /** 累加当天已实现盈亏。 */
-    public synchronized void addTodayRealizedPnl(double realizedPnl) {
+    public synchronized void addTodayRealizedPnl(BigDecimal realizedPnl) {
+        if (realizedPnl == null) return;
         LocalDate today = LocalDate.now(ACCOUNT_ZONE);
         if (!today.equals(realizedPnlDate)) {
             realizedPnlDate = today;
-            todayRealizedPnl = 0D;
+            todayRealizedPnl = ZERO;
         }
-        todayRealizedPnl += realizedPnl;
+        todayRealizedPnl = todayRealizedPnl.add(realizedPnl);
     }
 
     public void refreshExecutionState(String symbol) {
         if (symbol == null || symbol.isBlank()) return;
         PositionInfo position = positions.get(symbol);
-        if (position != null && Double.compare(position.getPositionAmt(), 0D) != 0) {
+        if (position != null && !isZero(position.getPositionAmt())) {
             executionStates.put(symbol, TradingExecutionState.POSITION_OPEN);
             return;
         }
@@ -165,5 +183,9 @@ public class TradingState {
             return;
         }
         if (!isOrderSubmitting(symbol)) executionStates.put(symbol, TradingExecutionState.READY);
+    }
+
+    private boolean isZero(BigDecimal value) {
+        return value == null || value.compareTo(ZERO) == 0;
     }
 }
