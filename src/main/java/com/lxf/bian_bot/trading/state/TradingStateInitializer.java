@@ -5,19 +5,14 @@ import com.binance.connector.client.derivatives_trading_usds_futures.rest.api.De
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.CurrentAllAlgoOpenOrdersResponse;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.CurrentAllAlgoOpenOrdersResponseInner;
 import com.lxf.bian_bot.thirdparty.binance.model.PositionInfo;
-import com.lxf.bian_bot.thirdparty.binance.model.ProtectionInfo;
 import com.lxf.bian_bot.thirdparty.binance.service.BinanceTradeService;
 import jakarta.annotation.PostConstruct;
+import java.math.BigDecimal;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
-/**
- * 程序启动时从 Binance 初始化 TradingState。
- *
- * <p>初始化完成后，运行期间的持仓变化由 Binance User Data Stream 的 ACCOUNT_UPDATE 持续更新，
- * TP/SL 保护单由 ALGO_UPDATE 持续更新，不需要 Strategy 反复查询 Binance REST。</p>
- */
+/** 程序启动时从 Binance 初始化 TradingState。 */
 @Slf4j
 @Component
 public class TradingStateInitializer {
@@ -60,12 +55,7 @@ public class TradingStateInitializer {
         }
     }
 
-    /**
-     * 启动时一次性读取当前所有仓位级条件保护单。
-     *
-     * <p>当前项目的 TP/SL 使用 Binance Futures Conditional Algo Order，
-     * 因此不能只查询普通 openOrders；必须查询 openAlgoOrders。</p>
-     */
+    /** 启动时一次性读取当前所有仓位级条件保护单。 */
     private void initializeProtections() {
         try {
             ApiResponse<CurrentAllAlgoOpenOrdersResponse> response =
@@ -82,8 +72,8 @@ public class TradingStateInitializer {
                 if (!"NEW".equalsIgnoreCase(order.getAlgoStatus())
                         && !"WORKING".equalsIgnoreCase(order.getAlgoStatus())) continue;
 
-                double triggerPrice = parseDouble(order.getTriggerPrice());
-                if (triggerPrice <= 0D) continue;
+                BigDecimal triggerPrice = parseBigDecimal(order.getTriggerPrice());
+                if (triggerPrice.compareTo(BigDecimal.ZERO) <= 0) continue;
 
                 String orderType = order.getOrderType();
                 if ("TAKE_PROFIT_MARKET".equalsIgnoreCase(orderType)
@@ -112,12 +102,12 @@ public class TradingStateInitializer {
         }
     }
 
-    private double parseDouble(String value) {
-        if (value == null || value.isBlank()) return 0D;
+    private BigDecimal parseBigDecimal(String value) {
+        if (value == null || value.isBlank()) return BigDecimal.ZERO;
         try {
-            return Double.parseDouble(value);
+            return new BigDecimal(value);
         } catch (NumberFormatException e) {
-            return 0D;
+            return BigDecimal.ZERO;
         }
     }
 }
