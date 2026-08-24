@@ -1,6 +1,5 @@
 package com.lxf.bian_bot.thirdparty.binance.service;
 
-import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.CurrentAllAlgoOpenOrdersResponseInner;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.Side;
 import com.lxf.bian_bot.thirdparty.binance.model.LeverageInfo;
 import com.lxf.bian_bot.thirdparty.binance.model.OrderInfo;
@@ -13,9 +12,6 @@ public interface BinanceTradeService {
 
     /** 程序启动时从 Binance 获取全部持仓，用于初始化 TradingState。 */
     List<PositionInfo> getPositions();
-
-    /** 程序启动时获取当前全部仓位级条件保护单（TP/SL）。 */
-    List<CurrentAllAlgoOpenOrdersResponseInner> getOpenProtectionOrders();
 
     /** 获取指定交易对当前真实持仓。 */
     PositionInfo getPositionInfo(String symbol);
