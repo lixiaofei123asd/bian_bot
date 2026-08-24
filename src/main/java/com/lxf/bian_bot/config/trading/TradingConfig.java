@@ -1,5 +1,6 @@
 package com.lxf.bian_bot.config.trading;
 
+import java.math.BigDecimal;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 
@@ -16,7 +17,7 @@ public class TradingConfig {
     private final boolean enabled;
 
     /** 每次开仓使用的 USDT 金额。 */
-    private final double usdtAmount;
+    private final BigDecimal usdtAmount;
 
     /** 下单模式：LIMIT 或 MARKET。 */
     private final String orderType;
@@ -28,10 +29,10 @@ public class TradingConfig {
     private final boolean takeProfitStopLossEnabled;
 
     /** 止盈金额（USDT）。 */
-    private final double takeProfitAmount;
+    private final BigDecimal takeProfitAmount;
 
     /** 止损金额（USDT）。 */
-    private final double stopLossAmount;
+    private final BigDecimal stopLossAmount;
 
     /** 保证金模式：ISOLATED 或 CROSSED。 */
     private final String marginType;
