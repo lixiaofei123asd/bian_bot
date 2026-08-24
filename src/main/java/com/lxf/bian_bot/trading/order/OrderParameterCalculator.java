@@ -1,8 +1,8 @@
 package com.lxf.bian_bot.trading.order;
 
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.Side;
-import com.lxf.bian_bot.config.SymbolRuleCache;
 import com.lxf.bian_bot.config.SymbolRule;
+import com.lxf.bian_bot.config.SymbolRuleCache;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import org.springframework.stereotype.Component;
@@ -16,60 +16,44 @@ public class OrderParameterCalculator {
         this.symbolRuleCache = symbolRuleCache;
     }
 
-    public double calculateMarketQuantity(String symbol, double usdtAmount, double price) {
+    public BigDecimal calculateMarketQuantity(String symbol, BigDecimal usdtAmount, BigDecimal price) {
         return calculateQuantity(symbol, usdtAmount, price, true);
     }
 
-    public double calculateLimitQuantity(String symbol, double usdtAmount, double price) {
+    public BigDecimal calculateLimitQuantity(String symbol, BigDecimal usdtAmount, BigDecimal price) {
         return calculateQuantity(symbol, usdtAmount, price, false);
     }
 
-    /**
-     * 按交易规则修正市价单数量。
-     *
-     * 市价单本身不提交 price，因此 price 可以为 0。
-     * 当调用方提供有效 price 时才校验最小名义价值；例如普通市价开仓可以传入当前价格，
-     * 而 reduceOnly 市价平仓通常不需要也无法提前知道实际成交价格，可以直接传 0。
-     */
-    public double normalizeMarketQuantity(String symbol, double quantity, double price) {
-        if (quantity <= 0) {
-            throw new IllegalArgumentException("下单数量必须大于 0：" + quantity);
-        }
-        if (price < 0) {
+    /** 按交易规则修正市价单数量。 */
+    public BigDecimal normalizeMarketQuantity(String symbol, BigDecimal quantity, BigDecimal price) {
+        requirePositive(quantity, "下单数量");
+        if (price.compareTo(BigDecimal.ZERO) < 0) {
             throw new IllegalArgumentException("下单价格不能小于 0：" + price);
         }
 
         SymbolRule rule = getRule(symbol);
-        BigDecimal quantityValue = normalizeQuantityValue(
-                rule, symbol, BigDecimal.valueOf(quantity), true);
-
-        // 市价平仓没有实际下单价格，price=0 时不能做名义价值校验。
-        if (price > 0) {
-            validateNotional(rule, symbol, quantityValue, BigDecimal.valueOf(price));
+        BigDecimal quantityValue = normalizeQuantityValue(rule, symbol, quantity, true);
+        if (price.compareTo(BigDecimal.ZERO) > 0) {
+            validateNotional(rule, symbol, quantityValue, price);
         }
-
-        return quantityValue.doubleValue();
+        return quantityValue;
     }
 
-    public double normalizeLimitQuantity(String symbol, double quantity, double price) {
-        if (quantity <= 0) {
-            throw new IllegalArgumentException("下单数量必须大于 0：" + quantity);
-        }
-        if (price <= 0) {
-            throw new IllegalArgumentException("下单价格必须大于 0：" + price);
-        }
+    public BigDecimal normalizeLimitQuantity(String symbol, BigDecimal quantity, BigDecimal price) {
+        requirePositive(quantity, "下单数量");
+        requirePositive(price, "下单价格");
 
         SymbolRule rule = getRule(symbol);
-        BigDecimal quantityValue = normalizeQuantityValue(rule, symbol, BigDecimal.valueOf(quantity), false);
-        validateNotional(rule, symbol, quantityValue, BigDecimal.valueOf(price));
-        return quantityValue.doubleValue();
+        BigDecimal quantityValue = normalizeQuantityValue(rule, symbol, quantity, false);
+        validateNotional(rule, symbol, quantityValue, price);
+        return quantityValue;
     }
 
-    public double normalizeEntryPrice(String symbol, double price, boolean buy) {
+    public BigDecimal normalizeEntryPrice(String symbol, BigDecimal price, boolean buy) {
         return normalizePrice(symbol, price, buy ? RoundingMode.DOWN : RoundingMode.UP);
     }
 
-    public double normalizeTriggerPrice(String symbol, double price, Side entrySide, boolean takeProfit) {
+    public BigDecimal normalizeTriggerPrice(String symbol, BigDecimal price, Side entrySide, boolean takeProfit) {
         RoundingMode roundingMode;
         if (Side.BUY.equals(entrySide)) {
             roundingMode = takeProfit ? RoundingMode.UP : RoundingMode.DOWN;
@@ -79,48 +63,43 @@ public class OrderParameterCalculator {
         return normalizePrice(symbol, price, roundingMode);
     }
 
-    private double normalizePrice(String symbol, double price, RoundingMode roundingMode) {
-        if (price <= 0) {
-            throw new IllegalArgumentException("价格必须大于 0：" + price);
-        }
+    private BigDecimal normalizePrice(String symbol, BigDecimal price, RoundingMode roundingMode) {
+        requirePositive(price, "价格");
 
         SymbolRule rule = getRule(symbol);
-        BigDecimal priceValue = BigDecimal.valueOf(price);
         BigDecimal tickSize = rule.getTickSize();
         if (tickSize == null || tickSize.compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalArgumentException("交易规则缺少有效的价格步长：" + symbol);
         }
 
-        BigDecimal normalizedPrice = priceValue
+        BigDecimal normalizedPrice = price
                 .divide(tickSize, 0, roundingMode)
                 .multiply(tickSize);
 
         validatePrice(rule, symbol, normalizedPrice);
-        return normalizedPrice.doubleValue();
+        return normalizedPrice;
     }
 
-    private double calculateQuantity(String symbol, double usdtAmount, double price, boolean marketOrder) {
-        if (usdtAmount <= 0) {
-            throw new IllegalArgumentException("下单金额必须大于 0：" + usdtAmount);
-        }
-        if (price <= 0) {
-            throw new IllegalArgumentException("下单价格必须大于 0：" + price);
-        }
+    private BigDecimal calculateQuantity(String symbol, BigDecimal usdtAmount,
+                                         BigDecimal price, boolean marketOrder) {
+        requirePositive(usdtAmount, "下单金额");
+        requirePositive(price, "下单价格");
 
         SymbolRule rule = getRule(symbol);
-        BigDecimal priceValue = BigDecimal.valueOf(price);
-        BigDecimal quantity = BigDecimal.valueOf(usdtAmount)
-                .divide(priceValue, 20, RoundingMode.DOWN);
-
+        BigDecimal quantity = usdtAmount.divide(price, 20, RoundingMode.DOWN);
         quantity = normalizeQuantityValue(rule, symbol, quantity, marketOrder);
-        validateNotional(rule, symbol, quantity, priceValue);
-        return quantity.doubleValue();
+        validateNotional(rule, symbol, quantity, price);
+        return quantity;
     }
 
-    private BigDecimal normalizeQuantityValue(SymbolRule rule, String symbol, BigDecimal quantity, boolean marketOrder) {
-        BigDecimal minQty = marketOrder && rule.getMarketMinQty() != null ? rule.getMarketMinQty() : rule.getMinQty();
-        BigDecimal maxQty = marketOrder && rule.getMarketMaxQty() != null ? rule.getMarketMaxQty() : rule.getMaxQty();
-        BigDecimal stepSize = marketOrder && rule.getMarketStepSize() != null ? rule.getMarketStepSize() : rule.getStepSize();
+    private BigDecimal normalizeQuantityValue(SymbolRule rule, String symbol,
+                                              BigDecimal quantity, boolean marketOrder) {
+        BigDecimal minQty = marketOrder && rule.getMarketMinQty() != null
+                ? rule.getMarketMinQty() : rule.getMinQty();
+        BigDecimal maxQty = marketOrder && rule.getMarketMaxQty() != null
+                ? rule.getMarketMaxQty() : rule.getMaxQty();
+        BigDecimal stepSize = marketOrder && rule.getMarketStepSize() != null
+                ? rule.getMarketStepSize() : rule.getStepSize();
 
         if (stepSize == null || stepSize.compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalArgumentException("交易规则缺少有效的数量步长：" + symbol);
@@ -142,7 +121,8 @@ public class OrderParameterCalculator {
         return quantity;
     }
 
-    private void validateNotional(SymbolRule rule, String symbol, BigDecimal quantity, BigDecimal price) {
+    private void validateNotional(SymbolRule rule, String symbol,
+                                  BigDecimal quantity, BigDecimal price) {
         BigDecimal minNotional = rule.getMinNotional();
         if (minNotional == null || minNotional.compareTo(BigDecimal.ZERO) <= 0) {
             return;
@@ -180,6 +160,12 @@ public class OrderParameterCalculator {
                     String.format("%s 价格超过最大价格：price=%s, maxPrice=%s",
                             symbol, price.stripTrailingZeros().toPlainString(),
                             rule.getMaxPrice().stripTrailingZeros().toPlainString()));
+        }
+    }
+
+    private void requirePositive(BigDecimal value, String name) {
+        if (value == null || value.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException(name + "必须大于 0：" + value);
         }
     }
 }
