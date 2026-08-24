@@ -2,11 +2,11 @@ package com.lxf.bian_bot.analysis.strategy;
 
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.Side;
 import com.lxf.bian_bot.analysis.Indicator;
-import com.lxf.bian_bot.analysis.model.IndicatorResult;
 import com.lxf.bian_bot.analysis.enums.IndicatorAction;
 import com.lxf.bian_bot.analysis.enums.IndicatorSignal;
 import com.lxf.bian_bot.analysis.enums.TradingSignal;
 import com.lxf.bian_bot.analysis.indicator.IndicatorDeepSeek;
+import com.lxf.bian_bot.analysis.model.IndicatorResult;
 import com.lxf.bian_bot.cache.TickerCache;
 import com.lxf.bian_bot.config.SymbolRuleCache;
 import com.lxf.bian_bot.config.strategy.StrategyConfig;
@@ -30,12 +30,6 @@ import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
-/**
- * AI 交易策略。
- *
- * <p>AI 自己决定执行周期、方向、限价、下单金额以及止盈止损。
- * BaseStrategy 只提供通用执行驱动和 Binance 交易准备。</p>
- */
 @Slf4j
 @Component
 public class AiStrategy extends BaseStrategy {
@@ -78,7 +72,6 @@ public class AiStrategy extends BaseStrategy {
         return 1;
     }
 
-    /** AI 自己决定执行周期：无仓位 5 分钟一次；有仓位 3 分钟一次。 */
     @Override
     protected Duration getExecutionInterval(String symbol) {
         PositionInfo position = tradingState.getPosition(symbol);
@@ -120,10 +113,7 @@ public class AiStrategy extends BaseStrategy {
                 .build();
     }
 
-    /**
-     * AI 的交易执行规则：始终使用 AI 返回的限价、金额、TP、SL。
-     * BinanceTradeService 这里只负责把参数发送给 Binance，不决定策略参数。
-     */
+    /** AI 自己决定金额、限价、止盈、止损；BinanceTradeService 负责统一交易规则修正。 */
     @Override
     protected OrderInfo createEntryOrder(TradingDecision decision) {
         String symbol = decision.getSymbol();
@@ -138,12 +128,12 @@ public class AiStrategy extends BaseStrategy {
         }
 
         Side side = decision.getDirection() == TradingDecision.Direction.LONG ? Side.BUY : Side.SELL;
-        double price = decision.getEntryPrice().doubleValue();
-        double usdtAmount = decision.getUsdtAmount().doubleValue();
-        double quantity = usdtAmount / price;
+        BigDecimal price = decision.getEntryPrice();
+        BigDecimal usdtAmount = decision.getUsdtAmount();
+        BigDecimal quantity = usdtAmount.divide(price, 20, java.math.RoundingMode.DOWN);
 
-        log.info("AI执行限价单: symbol={}, side={}, amount={}, price={}, tp={}, sl={}",
-                symbol, side, usdtAmount, price,
+        log.info("AI执行限价单: symbol={}, side={}, amount={}, price={}, quantity={}, tp={}, sl={}",
+                symbol, side, usdtAmount, price, quantity,
                 decision.getTakeProfitPrice(), decision.getStopLossPrice());
 
         if (decision.getTakeProfitPrice() != null && decision.getStopLossPrice() != null) {
@@ -153,8 +143,8 @@ public class AiStrategy extends BaseStrategy {
                     TimeInForce.GTC,
                     quantity,
                     price,
-                    decision.getTakeProfitPrice().doubleValue(),
-                    decision.getStopLossPrice().doubleValue());
+                    decision.getTakeProfitPrice(),
+                    decision.getStopLossPrice());
         }
 
         return tradeService.createLimitOrder(
