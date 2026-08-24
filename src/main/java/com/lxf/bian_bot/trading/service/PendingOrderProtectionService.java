@@ -13,6 +13,7 @@ import com.lxf.bian_bot.thirdparty.binance.enums.OrderType;
 import com.lxf.bian_bot.trading.order.OrderParameterCalculator;
 import com.lxf.bian_bot.trading.state.TradingState;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import lombok.extern.slf4j.Slf4j;
@@ -27,6 +28,7 @@ public class PendingOrderProtectionService {
     private static final String IMMEDIATE_TRIGGER_CODE = "-2021";
     private static final long ENTRY_ORDER_TIMEOUT_MILLIS = 60_000L;
     private static final BigDecimal ZERO = BigDecimal.ZERO;
+    private static final int CALCULATION_SCALE = 20;
 
     private final DerivativesTradingUsdsFuturesRestApi api;
     private final OrderParameterCalculator orderParameterCalculator;
@@ -45,7 +47,6 @@ public class PendingOrderProtectionService {
                          BigDecimal profitAmount, BigDecimal lossAmount) {
         requirePositive(profitAmount, "止盈金额");
         requirePositive(lossAmount, "止损金额");
-
         pendingOrders.put(orderId, new PendingProtection(
                 symbol, orderId, side, profitAmount, lossAmount, System.currentTimeMillis()));
         log.info("限价开仓保护任务已登记: symbol={}, orderId={}, side={}, profitAmount={}, lossAmount={}, timeout={}s",
@@ -54,9 +55,7 @@ public class PendingOrderProtectionService {
 
     @Scheduled(fixedDelay = 1000)
     public void checkPendingOrders() {
-        if (pendingOrders.isEmpty()) {
-            return;
-        }
+        if (pendingOrders.isEmpty()) return;
         for (PendingProtection pending : pendingOrders.values()) {
             try {
                 process(pending);
@@ -69,13 +68,10 @@ public class PendingOrderProtectionService {
     private void process(PendingProtection pending) {
         ApiResponse<QueryOrderResponse> response = api.queryOrder(pending.symbol, pending.orderId, null, null);
         QueryOrderResponse order = response.getData();
-        if (order == null || order.getStatus() == null) {
-            return;
-        }
+        if (order == null || order.getStatus() == null) return;
 
         String status = order.getStatus();
         BigDecimal executedQty = parseBigDecimal(order.getExecutedQty());
-
         if (executedQty.compareTo(ZERO) > 0) {
             if ("PARTIALLY_FILLED".equals(status) || "FILLED".equals(status)
                     || "CANCELED".equals(status) || "EXPIRED".equals(status)
@@ -103,9 +99,7 @@ public class PendingOrderProtectionService {
     private void handleFilledQuantity(PendingProtection pending, QueryOrderResponse order,
                                       String status, BigDecimal executedQty) {
         BigDecimal avgPrice = parseBigDecimal(order.getAvgPrice());
-        if (avgPrice.compareTo(ZERO) <= 0) {
-            avgPrice = parseBigDecimal(order.getPrice());
-        }
+        if (avgPrice.compareTo(ZERO) <= 0) avgPrice = parseBigDecimal(order.getPrice());
         if (avgPrice.compareTo(ZERO) <= 0) {
             log.warn("开仓已有成交但无法获得有效成交价格，等待下一次检查: symbol={}, orderId={}, status={}",
                     pending.symbol, pending.orderId, status);
@@ -125,7 +119,6 @@ public class PendingOrderProtectionService {
                 ENTRY_ORDER_TIMEOUT_MILLIS / 1000, pending.symbol, pending.orderId);
         try {
             api.cancelOrder(pending.symbol, pending.orderId, null, null);
-            log.info("限价开仓取消请求已发送: symbol={}, orderId={}", pending.symbol, pending.orderId);
         } catch (Exception e) {
             log.error("限价开仓取消失败，下一次检查继续处理: symbol={}, orderId={}", pending.symbol, pending.orderId, e);
             return;
@@ -133,19 +126,13 @@ public class PendingOrderProtectionService {
 
         ApiResponse<QueryOrderResponse> finalResponse = api.queryOrder(pending.symbol, pending.orderId, null, null);
         QueryOrderResponse finalOrder = finalResponse.getData();
-        if (finalOrder == null) {
-            return;
-        }
+        if (finalOrder == null) return;
 
         BigDecimal executedQty = parseBigDecimal(finalOrder.getExecutedQty());
         if (executedQty.compareTo(ZERO) > 0) {
             BigDecimal avgPrice = parseBigDecimal(finalOrder.getAvgPrice());
-            if (avgPrice.compareTo(ZERO) <= 0) {
-                avgPrice = parseBigDecimal(finalOrder.getPrice());
-            }
+            if (avgPrice.compareTo(ZERO) <= 0) avgPrice = parseBigDecimal(finalOrder.getPrice());
             if (avgPrice.compareTo(ZERO) > 0) {
-                log.info("取消挂单时发现订单已经产生成交，转为保护已成交仓位: symbol={}, orderId={}, status={}, executedQty={}, avgPrice={}",
-                        pending.symbol, pending.orderId, finalOrder.getStatus(), executedQty, avgPrice);
                 createProtectionOrders(pending, executedQty, avgPrice);
                 if (pending.slCreated && pending.tpCreated) {
                     pendingOrders.remove(pending.orderId);
@@ -173,27 +160,23 @@ public class PendingOrderProtectionService {
         String symbol = pending.symbol;
         Side openSide = pending.side;
 
-        entryPrice = orderParameterCalculator.normalizeEntryPrice(
-                symbol, entryPrice, Side.BUY.equals(openSide));
-        quantity = orderParameterCalculator.normalizeLimitQuantity(
-                symbol, quantity, entryPrice);
+        entryPrice = orderParameterCalculator.normalizeEntryPrice(symbol, entryPrice, Side.BUY.equals(openSide));
+        quantity = orderParameterCalculator.normalizeLimitQuantity(symbol, quantity, entryPrice);
         if (quantity.compareTo(ZERO) <= 0) {
             throw new IllegalStateException("成交数量经过交易规则修正后无效: symbol=" + symbol + ", quantity=" + quantity);
         }
 
-        BigDecimal tp;
-        BigDecimal sl;
-        if (openSide == Side.BUY) {
-            tp = entryPrice.add(pending.profitAmount.divide(quantity));
-            sl = entryPrice.subtract(pending.lossAmount.divide(quantity));
-        } else {
-            tp = entryPrice.subtract(pending.profitAmount.divide(quantity));
-            sl = entryPrice.add(pending.lossAmount.divide(quantity));
-        }
+        BigDecimal profitPerUnit = pending.profitAmount.divide(quantity, CALCULATION_SCALE, RoundingMode.HALF_UP);
+        BigDecimal lossPerUnit = pending.lossAmount.divide(quantity, CALCULATION_SCALE, RoundingMode.HALF_UP);
+        BigDecimal tp = openSide == Side.BUY
+                ? entryPrice.add(profitPerUnit)
+                : entryPrice.subtract(profitPerUnit);
+        BigDecimal sl = openSide == Side.BUY
+                ? entryPrice.subtract(lossPerUnit)
+                : entryPrice.add(lossPerUnit);
 
         tp = orderParameterCalculator.normalizeTriggerPrice(symbol, tp, openSide, true);
         sl = orderParameterCalculator.normalizeTriggerPrice(symbol, sl, openSide, false);
-
         Side closeSide = openSide == Side.BUY ? Side.SELL : Side.BUY;
 
         log.info("========== 开仓已产生成交，创建仓位级止盈止损 ==========");
@@ -207,12 +190,10 @@ public class PendingOrderProtectionService {
 
         try {
             if (!pending.slCreated) {
-                pending.slCreated = createProtectionAlgoOrder(
-                        symbol, closeSide, OrderType.STOP_MARKET, sl, "SL");
+                pending.slCreated = createProtectionAlgoOrder(symbol, closeSide, OrderType.STOP_MARKET, sl, "SL");
             }
             if (!pending.tpCreated) {
-                pending.tpCreated = createProtectionAlgoOrder(
-                        symbol, closeSide, OrderType.TAKE_PROFIT_MARKET, tp, "TP");
+                pending.tpCreated = createProtectionAlgoOrder(symbol, closeSide, OrderType.TAKE_PROFIT_MARKET, tp, "TP");
             }
         } catch (ApiException e) {
             if (isImmediateTriggerException(e)) {
@@ -221,16 +202,8 @@ public class PendingOrderProtectionService {
             }
             throw e;
         }
-
-        log.info("止盈止损保护状态: symbol={}, orderId={}, SL={}, TP={}",
-                symbol, pending.orderId, pending.slCreated, pending.tpCreated);
-        log.info("============================================");
     }
 
-    /**
-     * TP/SL 创建时如果 Binance 判断订单会立即触发，则说明当前价格已经越过保护价格。
-     * 此时直接使用当前类持有的 Binance API 创建 reduceOnly 市价平仓单。
-     */
     private void closeImmediatelyAfterProtectionTrigger(PendingProtection pending,
                                                          Side openSide,
                                                          BigDecimal quantity,
@@ -238,16 +211,10 @@ public class PendingOrderProtectionService {
                                                          BigDecimal sl) {
         log.warn("当前价格已经越过止盈/止损价格，直接市价平仓: symbol={}, orderId={}, side={}, tp={}, sl={}",
                 pending.symbol, pending.orderId, openSide, tp, sl);
-
         try {
             Side closeSide = openSide == Side.BUY ? Side.SELL : Side.BUY;
-            quantity = orderParameterCalculator.normalizeMarketQuantity(
-                    pending.symbol, quantity, ZERO);
-            if (quantity.compareTo(ZERO) <= 0) {
-                log.error("立即市价平仓数量无效，保留保护任务继续处理: symbol={}, orderId={}, quantity={}",
-                        pending.symbol, pending.orderId, quantity);
-                return;
-            }
+            quantity = orderParameterCalculator.normalizeMarketQuantity(pending.symbol, quantity, ZERO);
+            if (quantity.compareTo(ZERO) <= 0) return;
 
             NewOrderRequest request = new NewOrderRequest();
             request.setSymbol(pending.symbol);
@@ -262,11 +229,9 @@ public class PendingOrderProtectionService {
                 throw new RuntimeException("立即市价平仓失败！symbol=" + pending.symbol);
             }
 
-            var closeOrder = response.getData();
             log.warn("已发送立即市价平仓: symbol={}, orderId={}, closeOrderId={}, status={}, executedQty={}, avgPrice={}",
-                    pending.symbol, pending.orderId, closeOrder.getOrderId(), closeOrder.getStatus(),
-                    closeOrder.getExecutedQty(), closeOrder.getAvgPrice());
-
+                    pending.symbol, pending.orderId, response.getData().getOrderId(), response.getData().getStatus(),
+                    response.getData().getExecutedQty(), response.getData().getAvgPrice());
             pendingOrders.remove(pending.orderId);
             tradingState.removeOrder(pending.orderId);
             tradingState.refreshExecutionState(pending.symbol);
@@ -281,12 +246,6 @@ public class PendingOrderProtectionService {
         return message != null && message.contains(IMMEDIATE_TRIGGER_CODE);
     }
 
-    /**
-     * 创建仓位级条件保护单。
-     *
-     * closePosition=true 表示触发后关闭当前方向的全部仓位，而不是只平固定数量。
-     * 因此这里不再设置 quantity，也不设置 reduceOnly。
-     */
     private boolean createProtectionAlgoOrder(String symbol, Side side, OrderType type,
                                               BigDecimal triggerPrice, String name) {
         NewAlgoOrderRequest request = new NewAlgoOrderRequest();
@@ -300,8 +259,7 @@ public class PendingOrderProtectionService {
 
         ApiResponse<NewAlgoOrderResponse> response = api.newAlgoOrder(request);
         if (response.getStatusCode() != 200 || response.getData() == null) {
-            throw new RuntimeException(name + " 止盈止损订单创建失败！symbol=" + symbol
-                    + ", triggerPrice=" + triggerPrice);
+            throw new RuntimeException(name + " 止盈止损订单创建失败！symbol=" + symbol + ", triggerPrice=" + triggerPrice);
         }
 
         NewAlgoOrderResponse data = response.getData();
