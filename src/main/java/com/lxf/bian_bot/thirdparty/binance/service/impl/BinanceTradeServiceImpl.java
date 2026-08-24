@@ -14,15 +14,16 @@ import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.PositionInformationV2ResponseInner;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.Side;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.SymbolOrderBookTickerResponse;
-import com.lxf.bian_bot.thirdparty.binance.model.LeverageInfo;
-import com.lxf.bian_bot.thirdparty.binance.model.OrderInfo;
 import com.lxf.bian_bot.thirdparty.binance.enums.OrderType;
-import com.lxf.bian_bot.thirdparty.binance.model.PositionInfo;
 import com.lxf.bian_bot.thirdparty.binance.enums.TimeInForce;
 import com.lxf.bian_bot.thirdparty.binance.enums.TradingMarginType;
+import com.lxf.bian_bot.thirdparty.binance.model.LeverageInfo;
+import com.lxf.bian_bot.thirdparty.binance.model.OrderInfo;
+import com.lxf.bian_bot.thirdparty.binance.model.PositionInfo;
 import com.lxf.bian_bot.thirdparty.binance.service.BinanceTradeService;
 import com.lxf.bian_bot.trading.order.OrderParameterCalculator;
 import com.lxf.bian_bot.trading.service.PendingOrderProtectionService;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Objects;
 import lombok.extern.slf4j.Slf4j;
@@ -92,13 +93,14 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
     }
 
     @Override
-    public OrderInfo createMarketOrder(String symbol, Side side, double usdtAmount) {
+    public OrderInfo createMarketOrder(String symbol, Side side, BigDecimal usdtAmount) {
         ApiResponse<SymbolOrderBookTickerResponse> bookTicker = api.symbolOrderBookTicker(symbol);
         SymbolOrderBookTickerResponse bookTickerData = bookTicker.getData();
-        double price = Side.BUY.equals(side)
-                ? Double.parseDouble(Objects.requireNonNull(bookTickerData.getSymbolOrderBookTickerResponse1().getAskPrice()))
-                : Double.parseDouble(Objects.requireNonNull(bookTickerData.getSymbolOrderBookTickerResponse1().getBidPrice()));
-        double quantity = orderParameterCalculator.calculateMarketQuantity(symbol, usdtAmount, price);
+        BigDecimal price = Side.BUY.equals(side)
+                ? new BigDecimal(Objects.requireNonNull(bookTickerData.getSymbolOrderBookTickerResponse1().getAskPrice()))
+                : new BigDecimal(Objects.requireNonNull(bookTickerData.getSymbolOrderBookTickerResponse1().getBidPrice()));
+
+        BigDecimal quantity = orderParameterCalculator.calculateMarketQuantity(symbol, usdtAmount, price);
 
         log.info("========== 市价下单 ==========");
         log.info("交易对：{}", symbol);
@@ -112,22 +114,25 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
         request.type(OrderType.MARKET.name());
         request.symbol(symbol);
         request.side(side);
-        request.setQuantity(quantity);
+        request.setQuantity(quantity.doubleValue());
         return newOrder(request, "下单失败！");
     }
 
     @Override
-    public OrderInfo createLimitOrder(String symbol, Side side, TimeInForce timeInForce, double usdtAmount, double price) {
-        price = orderParameterCalculator.normalizeEntryPrice(symbol, price, Side.BUY.equals(side));
-        double quantity = orderParameterCalculator.calculateLimitQuantity(symbol, usdtAmount, price);
+    public OrderInfo createLimitOrder(String symbol, Side side, TimeInForce timeInForce,
+                                      BigDecimal usdtAmount, BigDecimal price) {
+        BigDecimal normalizedPrice = orderParameterCalculator.normalizeEntryPrice(
+                symbol, price, Side.BUY.equals(side));
+        BigDecimal quantity = orderParameterCalculator.calculateLimitQuantity(
+                symbol, usdtAmount, normalizedPrice);
 
         log.info("========== 限价下单 ==========");
         log.info("交易对：{}", symbol);
         log.info("方向：{}", side);
-        log.info("USDT金额：{}", usdtAmount);
-        log.info("单价：{}", price);
+        log.info("AI/策略金额：{}", usdtAmount);
+        log.info("修正后单价：{}", normalizedPrice);
         log.info("生效时间：{}", timeInForce.name());
-        log.info("实际数量：{}", quantity);
+        log.info("修正后数量：{}", quantity);
         log.info("==============================");
 
         NewOrderRequest request = new NewOrderRequest();
@@ -135,43 +140,46 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
         request.symbol(symbol);
         request.side(side);
         request.setTimeInForce(com.binance.connector.client.derivatives_trading_usds_futures.rest.model.TimeInForce.valueOf(timeInForce.name()));
-        request.setQuantity(quantity);
-        request.setPrice(price);
+        request.setQuantity(quantity.doubleValue());
+        request.setPrice(normalizedPrice.doubleValue());
         request.setNewOrderRespType(NewOrderRespType.RESULT);
         return newOrder(request, "限价下单失败！");
     }
 
     @Override
     public OrderInfo createLimitOrderAndTPSLForPrice(String symbol, Side side, TimeInForce timeInForce,
-                                                       double quantity, double price, double tp, double sl) {
-        if (quantity <= 0) throw new IllegalArgumentException("下单数量必须大于 0：" + quantity);
-        if (price <= 0) throw new IllegalArgumentException("下单价格必须大于 0：" + price);
-        if (tp <= 0 || sl <= 0) throw new IllegalArgumentException("止盈止损价格必须大于 0：tp=" + tp + ", sl=" + sl);
-
-        price = orderParameterCalculator.normalizeEntryPrice(symbol, price, Side.BUY.equals(side));
-        quantity = orderParameterCalculator.normalizeLimitQuantity(symbol, quantity, price);
-        tp = orderParameterCalculator.normalizeTriggerPrice(symbol, tp, side, true);
-        sl = orderParameterCalculator.normalizeTriggerPrice(symbol, sl, side, false);
+                                                       BigDecimal quantity, BigDecimal price,
+                                                       BigDecimal tp, BigDecimal sl) {
+        BigDecimal normalizedPrice = orderParameterCalculator.normalizeEntryPrice(
+                symbol, price, Side.BUY.equals(side));
+        BigDecimal normalizedQuantity = orderParameterCalculator.normalizeLimitQuantity(
+                symbol, quantity, normalizedPrice);
+        BigDecimal normalizedTp = orderParameterCalculator.normalizeTriggerPrice(
+                symbol, tp, side, true);
+        BigDecimal normalizedSl = orderParameterCalculator.normalizeTriggerPrice(
+                symbol, sl, side, false);
 
         NewOrderRequest entryRequest = new NewOrderRequest();
         entryRequest.type(OrderType.LIMIT.name());
         entryRequest.symbol(symbol);
         entryRequest.side(side);
         entryRequest.setTimeInForce(com.binance.connector.client.derivatives_trading_usds_futures.rest.model.TimeInForce.valueOf(timeInForce.name()));
-        entryRequest.setQuantity(quantity);
-        entryRequest.setPrice(price);
+        entryRequest.setQuantity(normalizedQuantity.doubleValue());
+        entryRequest.setPrice(normalizedPrice.doubleValue());
         entryRequest.setNewOrderRespType(NewOrderRespType.RESULT);
 
         log.info("========== 限价开仓 + 止盈止损 ==========");
         log.info("交易对：{}", symbol);
         log.info("开仓方向：{}", side);
-        log.info("数量：{}", quantity);
-        log.info("开仓价格：{}", price);
-        log.info("预计算止盈价格：{}", tp);
-        log.info("预计算止损价格：{}", sl);
+        log.info("原始数量：{} -> 修正数量：{}", quantity, normalizedQuantity);
+        log.info("原始开仓价格：{} -> 修正价格：{}", price, normalizedPrice);
+        log.info("原始止盈：{} -> 修正止盈：{}", tp, normalizedTp);
+        log.info("原始止损：{} -> 修正止损：{}", sl, normalizedSl);
 
         ApiResponse<NewOrderResponse> entryResponse = api.newOrder(entryRequest);
-        if (entryResponse.getStatusCode() != 200 || entryResponse.getData() == null) throw new RuntimeException("限价开仓失败！");
+        if (entryResponse.getStatusCode() != 200 || entryResponse.getData() == null) {
+            throw new RuntimeException("限价开仓失败！");
+        }
 
         NewOrderResponse entryData = entryResponse.getData();
         OrderInfo entryOrder = toOrderInfo(entryData);
@@ -179,10 +187,16 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
         log.info("限价开仓订单已提交: orderId={}, status={}, executedQty={}, avgPrice={}",
                 entryData.getOrderId(), entryData.getStatus(), entryData.getExecutedQty(), entryData.getAvgPrice());
 
-        double profitAmount = Side.BUY.equals(side) ? (tp - price) * quantity : (price - tp) * quantity;
-        double lossAmount = Side.BUY.equals(side) ? (price - sl) * quantity : (sl - price) * quantity;
+        BigDecimal profitAmount = Side.BUY.equals(side)
+                ? normalizedTp.subtract(normalizedPrice).multiply(normalizedQuantity)
+                : normalizedPrice.subtract(normalizedTp).multiply(normalizedQuantity);
+        BigDecimal lossAmount = Side.BUY.equals(side)
+                ? normalizedPrice.subtract(normalizedSl).multiply(normalizedQuantity)
+                : normalizedSl.subtract(normalizedPrice).multiply(normalizedQuantity);
 
-        pendingOrderProtectionService.register(symbol, entryData.getOrderId(), side, profitAmount, lossAmount);
+        pendingOrderProtectionService.register(symbol, entryData.getOrderId(), side,
+                profitAmount.doubleValue(), lossAmount.doubleValue());
+
         log.info("限价开仓保护任务已等待成交: symbol={}, orderId={}, status={}, profitAmount={}, lossAmount={}",
                 symbol, entryData.getOrderId(), entryData.getStatus(), profitAmount, lossAmount);
         log.info("=========================================");
@@ -191,61 +205,79 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
 
     @Override
     public OrderInfo createLimitOrderAndTPSLForProfitAndLoss(String symbol, Side side, TimeInForce timeInForce,
-                                                               double quantity, double price, double profitAmount,
-                                                               double lossAmount) {
-        if (quantity <= 0) throw new IllegalArgumentException("下单数量必须大于 0：" + quantity);
-        if (profitAmount <= 0 || lossAmount <= 0) throw new IllegalArgumentException("盈利和亏损金额必须大于 0：profitAmount=" + profitAmount + ", lossAmount=" + lossAmount);
-
-        price = orderParameterCalculator.normalizeEntryPrice(symbol, price, Side.BUY.equals(side));
-        quantity = orderParameterCalculator.normalizeLimitQuantity(symbol, quantity, price);
-
-        double tp;
-        double sl;
-        if (side == Side.BUY) {
-            tp = price + profitAmount / quantity;
-            sl = price - lossAmount / quantity;
-        } else {
-            tp = price - profitAmount / quantity;
-            sl = price + lossAmount / quantity;
+                                                               BigDecimal quantity, BigDecimal price,
+                                                               BigDecimal profitAmount, BigDecimal lossAmount) {
+        if (profitAmount == null || profitAmount.compareTo(BigDecimal.ZERO) <= 0
+                || lossAmount == null || lossAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("盈利和亏损金额必须大于 0：profitAmount=" + profitAmount + ", lossAmount=" + lossAmount);
         }
 
-        log.info("按照实际下单价格和数量计算止盈止损: symbol={}, price={}, quantity={}, profitAmount={}, lossAmount={}, tp={}, sl={}",
-                symbol, price, quantity, profitAmount, lossAmount, tp, sl);
-        return createLimitOrderAndTPSLForPrice(symbol, side, timeInForce, quantity, price, tp, sl);
+        BigDecimal normalizedPrice = orderParameterCalculator.normalizeEntryPrice(
+                symbol, price, Side.BUY.equals(side));
+        BigDecimal normalizedQuantity = orderParameterCalculator.normalizeLimitQuantity(
+                symbol, quantity, normalizedPrice);
+
+        BigDecimal tp;
+        BigDecimal sl;
+        if (side == Side.BUY) {
+            tp = normalizedPrice.add(profitAmount.divide(normalizedQuantity, 20, java.math.RoundingMode.HALF_UP));
+            sl = normalizedPrice.subtract(lossAmount.divide(normalizedQuantity, 20, java.math.RoundingMode.HALF_UP));
+        } else {
+            tp = normalizedPrice.subtract(profitAmount.divide(normalizedQuantity, 20, java.math.RoundingMode.HALF_UP));
+            sl = normalizedPrice.add(lossAmount.divide(normalizedQuantity, 20, java.math.RoundingMode.HALF_UP));
+        }
+
+        log.info("按照修正后的实际下单价格和数量计算止盈止损: symbol={}, price={}, quantity={}, profitAmount={}, lossAmount={}, tp={}, sl={}",
+                symbol, normalizedPrice, normalizedQuantity, profitAmount, lossAmount, tp, sl);
+
+        return createLimitOrderAndTPSLForPrice(symbol, side, timeInForce,
+                normalizedQuantity, normalizedPrice, tp, sl);
     }
 
     @Override
     public OrderInfo createLimitOrderAndTPSLForPercentage(String symbol, Side side, TimeInForce timeInForce,
-                                                           double quantity, double price, double profitPercentage,
-                                                           double lossPercentage) {
-        if (price <= 0) throw new IllegalArgumentException("开仓价格必须大于 0：" + price);
-        if (profitPercentage <= 0 || lossPercentage <= 0) throw new IllegalArgumentException("盈利和亏损百分比必须大于 0：profitPercentage=" + profitPercentage + ", lossPercentage=" + lossPercentage);
+                                                           BigDecimal quantity, BigDecimal price,
+                                                           BigDecimal profitPercentage, BigDecimal lossPercentage) {
+        if (profitPercentage == null || profitPercentage.compareTo(BigDecimal.ZERO) <= 0
+                || lossPercentage == null || lossPercentage.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("盈利和亏损百分比必须大于 0：profitPercentage="
+                    + profitPercentage + ", lossPercentage=" + lossPercentage);
+        }
 
-        price = orderParameterCalculator.normalizeEntryPrice(symbol, price, Side.BUY.equals(side));
-        quantity = orderParameterCalculator.normalizeLimitQuantity(symbol, quantity, price);
+        BigDecimal normalizedPrice = orderParameterCalculator.normalizeEntryPrice(
+                symbol, price, Side.BUY.equals(side));
+        BigDecimal normalizedQuantity = orderParameterCalculator.normalizeLimitQuantity(
+                symbol, quantity, normalizedPrice);
 
-        double tp;
-        double sl;
+        BigDecimal hundred = BigDecimal.valueOf(100);
+        BigDecimal tp;
+        BigDecimal sl;
         if (side == Side.BUY) {
-            tp = price * (1 + profitPercentage / 100.0);
-            sl = price * (1 - lossPercentage / 100.0);
+            tp = normalizedPrice.multiply(BigDecimal.ONE.add(profitPercentage.divide(hundred, 20, java.math.RoundingMode.HALF_UP)));
+            sl = normalizedPrice.multiply(BigDecimal.ONE.subtract(lossPercentage.divide(hundred, 20, java.math.RoundingMode.HALF_UP)));
         } else {
-            tp = price * (1 - profitPercentage / 100.0);
-            sl = price * (1 + lossPercentage / 100.0);
+            tp = normalizedPrice.multiply(BigDecimal.ONE.subtract(profitPercentage.divide(hundred, 20, java.math.RoundingMode.HALF_UP)));
+            sl = normalizedPrice.multiply(BigDecimal.ONE.add(lossPercentage.divide(hundred, 20, java.math.RoundingMode.HALF_UP)));
         }
 
         log.info("按照盈亏百分比计算止盈止损: symbol={}, profitPercentage={}%, lossPercentage={}%, tp={}, sl={}",
                 symbol, profitPercentage, lossPercentage, tp, sl);
-        return createLimitOrderAndTPSLForPrice(symbol, side, timeInForce, quantity, price, tp, sl);
+
+        return createLimitOrderAndTPSLForPrice(symbol, side, timeInForce,
+                normalizedQuantity, normalizedPrice, tp, sl);
     }
 
     @Override
     public OrderInfo closeMarketOrder(String symbol) {
         PositionInfo positionInfo = this.getPositionInfo(symbol);
-        double positionAmt = positionInfo.getPositionAmt();
-        Side closeSide = positionAmt > 0 ? Side.SELL : Side.BUY;
-        double quantity = Math.abs(positionAmt);
-        quantity = orderParameterCalculator.normalizeMarketQuantity(symbol, quantity, positionInfo.getMarkPrice());
+        BigDecimal positionAmt = BigDecimal.valueOf(positionInfo.getPositionAmt());
+        if (positionAmt.compareTo(BigDecimal.ZERO) == 0) {
+            throw new IllegalStateException("当前没有可平仓位：" + symbol);
+        }
+
+        Side closeSide = positionAmt.compareTo(BigDecimal.ZERO) > 0 ? Side.SELL : Side.BUY;
+        BigDecimal quantity = orderParameterCalculator.normalizeMarketQuantity(
+                symbol, positionAmt.abs(), BigDecimal.ZERO);
 
         log.info("========== 市价平仓 ==========");
         log.info("交易对：{}", symbol);
@@ -257,7 +289,7 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
         request.setSymbol(symbol);
         request.setSide(closeSide);
         request.setType(OrderType.MARKET.name());
-        request.setQuantity(quantity);
+        request.setQuantity(quantity.doubleValue());
         request.setReduceOnly("true");
         request.setNewOrderRespType(NewOrderRespType.RESULT);
         return newOrder(request, "市价平仓失败！");
@@ -290,7 +322,9 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
 
     private OrderInfo newOrder(NewOrderRequest request, String message) {
         ApiResponse<NewOrderResponse> response = api.newOrder(request);
-        if (response.getStatusCode() != 200 || response.getData() == null) throw new RuntimeException(message);
+        if (response.getStatusCode() != 200 || response.getData() == null) {
+            throw new RuntimeException(message);
+        }
         return toOrderInfo(response.getData());
     }
 
