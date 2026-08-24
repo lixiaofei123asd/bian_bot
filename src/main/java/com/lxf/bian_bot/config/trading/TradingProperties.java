@@ -1,5 +1,6 @@
 package com.lxf.bian_bot.config.trading;
 
+import java.math.BigDecimal;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
@@ -11,7 +12,7 @@ public class TradingProperties {
     private boolean enabled;
 
     /** 每次开仓使用的 USDT 金额。 */
-    private double usdtAmount = 10.0;
+    private BigDecimal usdtAmount = new BigDecimal("10.0");
 
     /** 下单模式：LIMIT=限价单，MARKET=市价单。 */
     private String orderType = "LIMIT";
@@ -23,10 +24,10 @@ public class TradingProperties {
     private boolean takeProfitStopLossEnabled = true;
 
     /** 止盈金额（USDT）。 */
-    private double takeProfitAmount = 0.02;
+    private BigDecimal takeProfitAmount = new BigDecimal("0.02");
 
     /** 止损金额（USDT）。 */
-    private double stopLossAmount = 0.03;
+    private BigDecimal stopLossAmount = new BigDecimal("0.03");
 
     /** 保证金模式：ISOLATED=逐仓，CROSSED=全仓。 */
     private String marginType = "ISOLATED";
