@@ -14,6 +14,7 @@ import com.lxf.bian_bot.trading.state.TradingState;
 import com.lxf.bian_bot.thirdparty.binance.websocket.BinanceUserDataStreamClient;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
@@ -27,6 +28,7 @@ import org.springframework.stereotype.Service;
 public class BinanceUserDataStreamServiceImpl implements BinanceUserDataStreamService {
 
     private static final long KEEPALIVE_INTERVAL_MILLIS = 30 * 60 * 1000L;
+    private static final BigDecimal ZERO = BigDecimal.ZERO;
 
     private final UserDataStreamsApi userDataStreamsApi;
     private final TradingState tradingState;
@@ -154,12 +156,12 @@ public class BinanceUserDataStreamServiceImpl implements BinanceUserDataStreamSe
 
     private void updateAccount(JsonNode balances, JsonNode positions) {
         AccountInfo old = tradingState.getAccountInfo();
-        double walletBalance = old == null ? 0D : old.getTotalWalletBalance();
-        double marginBalance = old == null ? 0D : old.getTotalMarginBalance();
-        double availableBalance = old == null ? 0D : old.getAvailableBalance();
-        double maxWithdraw = old == null ? 0D : old.getMaxWithdrawAmount();
+        BigDecimal walletBalance = old == null ? ZERO : defaultValue(old.getTotalWalletBalance());
+        BigDecimal marginBalance = old == null ? ZERO : defaultValue(old.getTotalMarginBalance());
+        BigDecimal availableBalance = old == null ? ZERO : defaultValue(old.getAvailableBalance());
+        BigDecimal maxWithdraw = old == null ? ZERO : defaultValue(old.getMaxWithdrawAmount());
         boolean canTrade = old == null || old.isCanTrade();
-        double unrealizedProfit = 0D;
+        BigDecimal unrealizedProfit = ZERO;
 
         if (balances != null && balances.isArray()) {
             for (JsonNode balance : balances) {
@@ -171,12 +173,12 @@ public class BinanceUserDataStreamServiceImpl implements BinanceUserDataStreamSe
             }
         }
         if (positions != null && positions.isArray()) {
-            for (JsonNode position : positions) unrealizedProfit += number(position, "up", 0D);
+            for (JsonNode position : positions) unrealizedProfit = unrealizedProfit.add(number(position, "up", ZERO));
         }
 
         AccountInfo accountInfo = AccountInfo.builder()
                 .totalWalletBalance(walletBalance)
-                .totalMarginBalance(marginBalance + unrealizedProfit)
+                .totalMarginBalance(marginBalance.add(unrealizedProfit))
                 .totalUnrealizedProfit(unrealizedProfit)
                 .availableBalance(availableBalance)
                 .maxWithdrawAmount(maxWithdraw)
@@ -194,27 +196,26 @@ public class BinanceUserDataStreamServiceImpl implements BinanceUserDataStreamSe
             if (symbol == null || symbol.isBlank()) continue;
 
             PositionInfo oldPosition = tradingState.getPosition(symbol);
-            double oldAmount = oldPosition == null ? 0D : oldPosition.getPositionAmt();
+            BigDecimal oldAmount = oldPosition == null ? ZERO : defaultValue(oldPosition.getPositionAmt());
 
             PositionInfo position = PositionInfo.builder()
                     .symbol(symbol)
-                    .positionAmt(number(node, "pa", 0D))
-                    .entryPrice(number(node, "ep", 0D))
-                    .breakEvenPrice(number(node, "bep", 0D))
-                    .unrealizedProfit(number(node, "up", 0D))
+                    .positionAmt(number(node, "pa", ZERO))
+                    .entryPrice(number(node, "ep", ZERO))
+                    .breakEvenPrice(number(node, "bep", ZERO))
+                    .unrealizedProfit(number(node, "up", ZERO))
                     .positionSide(text(node, "ps"))
                     .marginType(text(node, "mt"))
                     .autoAddMargin("true".equalsIgnoreCase(text(node, "iw")))
                     .build();
 
-            double newAmount = position.getPositionAmt();
+            BigDecimal newAmount = defaultValue(position.getPositionAmt());
             tradingState.updatePosition(position);
 
-            if (Double.compare(oldAmount, 0D) != 0 && Double.compare(newAmount, 0D) == 0) {
+            if (oldAmount.compareTo(ZERO) != 0 && newAmount.compareTo(ZERO) == 0) {
                 int removed = tradingState.clearSymbolOrders(symbol);
                 tradingState.updateExecutionState(symbol, TradingExecutionState.READY);
-                log.info("{} 持仓已归零，清理 TradingState 残留订单: removed={}, executionState=READY",
-                        symbol, removed);
+                log.info("{} 持仓已归零，清理 TradingState 残留订单: removed={}, executionState=READY", symbol, removed);
             } else {
                 tradingState.refreshExecutionState(symbol);
             }
@@ -234,13 +235,11 @@ public class BinanceUserDataStreamServiceImpl implements BinanceUserDataStreamSe
         String status = text(orderNode, "X");
         String executionType = text(orderNode, "x");
         boolean reduceOnly = orderNode.path("R").asBoolean(false);
-        double lastFilledQty = number(orderNode, "l", 0D);
+        BigDecimal lastFilledQty = number(orderNode, "l", ZERO);
 
         if ("TRADE".equals(executionType)) {
-            tradingState.addTodayRealizedPnl(number(orderNode, "rp", 0D));
+            tradingState.addTodayRealizedPnl(number(orderNode, "rp", ZERO));
 
-            // reduceOnly 成交时，先用 ORDER_TRADE_UPDATE 增量修正本地持仓。
-            // 这样即使 ACCOUNT_UPDATE 稍后到达，TradingState 也不会在这段时间继续保留旧仓位。
             PositionInfo adjustedPosition = tradingState.applyTradeToPosition(
                     symbol, text(orderNode, "S"), reduceOnly, lastFilledQty);
             if (adjustedPosition != null) {
@@ -271,10 +270,10 @@ public class BinanceUserDataStreamServiceImpl implements BinanceUserDataStreamSe
                 .clientOrderId(text(orderNode, "c"))
                 .side(text(orderNode, "S"))
                 .type(text(orderNode, "o"))
-                .origQty(number(orderNode, "q", 0D))
-                .executedQty(number(orderNode, "z", 0D))
-                .avgPrice(number(orderNode, "ap", 0D))
-                .price(number(orderNode, "p", 0D))
+                .origQty(number(orderNode, "q", ZERO))
+                .executedQty(number(orderNode, "z", ZERO))
+                .avgPrice(number(orderNode, "ap", ZERO))
+                .price(number(orderNode, "p", ZERO))
                 .status(status)
                 .reduceOnly(reduceOnly)
                 .positionSide(text(orderNode, "ps"))
@@ -288,13 +287,22 @@ public class BinanceUserDataStreamServiceImpl implements BinanceUserDataStreamSe
         notifyListeners(orderListeners, order);
     }
 
-    private boolean isOpenStatus(String status) { return "NEW".equals(status) || "PARTIALLY_FILLED".equals(status); }
+    private boolean isOpenStatus(String status) {
+        return "NEW".equals(status) || "PARTIALLY_FILLED".equals(status);
+    }
 
-    private double number(JsonNode node, String field, double defaultValue) {
+    private BigDecimal number(JsonNode node, String field, BigDecimal defaultValue) {
         JsonNode value = node.get(field);
         if (value == null || value.isNull()) return defaultValue;
-        try { return Double.parseDouble(value.asText()); }
-        catch (Exception e) { return defaultValue; }
+        try {
+            return new BigDecimal(value.asText());
+        } catch (Exception e) {
+            return defaultValue;
+        }
+    }
+
+    private BigDecimal defaultValue(BigDecimal value) {
+        return value == null ? ZERO : value;
     }
 
     private String text(JsonNode node, String field) {
@@ -304,21 +312,32 @@ public class BinanceUserDataStreamServiceImpl implements BinanceUserDataStreamSe
 
     private <T> void notifyListeners(List<Consumer<T>> listeners, T value) {
         for (Consumer<T> listener : listeners) {
-            try { listener.accept(value); }
-            catch (Exception e) { log.error("User Data Stream listener 执行异常", e); }
+            try {
+                listener.accept(value);
+            } catch (Exception e) {
+                log.error("User Data Stream listener 执行异常", e);
+            }
         }
     }
 
     @Override
-    public void addOrderListener(Consumer<OrderInfo> listener) { if (listener != null) orderListeners.add(listener); }
+    public void addOrderListener(Consumer<OrderInfo> listener) {
+        if (listener != null) orderListeners.add(listener);
+    }
 
     @Override
-    public void addPositionListener(Consumer<PositionInfo> listener) { if (listener != null) positionListeners.add(listener); }
+    public void addPositionListener(Consumer<PositionInfo> listener) {
+        if (listener != null) positionListeners.add(listener);
+    }
 
-    public void addAccountListener(Consumer<AccountInfo> listener) { if (listener != null) accountListeners.add(listener); }
+    public void addAccountListener(Consumer<AccountInfo> listener) {
+        if (listener != null) accountListeners.add(listener);
+    }
 
     @Override
-    public boolean isConnected() { return client.isConnected(); }
+    public boolean isConnected() {
+        return client.isConnected();
+    }
 
     @PreDestroy
     @Override
