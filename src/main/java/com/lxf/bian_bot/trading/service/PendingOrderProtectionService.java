@@ -12,6 +12,7 @@ import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.
 import com.lxf.bian_bot.thirdparty.binance.enums.OrderType;
 import com.lxf.bian_bot.trading.order.OrderParameterCalculator;
 import com.lxf.bian_bot.trading.state.TradingState;
+import java.math.BigDecimal;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import lombok.extern.slf4j.Slf4j;
@@ -25,6 +26,7 @@ public class PendingOrderProtectionService {
 
     private static final String IMMEDIATE_TRIGGER_CODE = "-2021";
     private static final long ENTRY_ORDER_TIMEOUT_MILLIS = 60_000L;
+    private static final BigDecimal ZERO = BigDecimal.ZERO;
 
     private final DerivativesTradingUsdsFuturesRestApi api;
     private final OrderParameterCalculator orderParameterCalculator;
@@ -39,7 +41,11 @@ public class PendingOrderProtectionService {
         this.tradingState = tradingState;
     }
 
-    public void register(String symbol, long orderId, Side side, double profitAmount, double lossAmount) {
+    public void register(String symbol, long orderId, Side side,
+                         BigDecimal profitAmount, BigDecimal lossAmount) {
+        requirePositive(profitAmount, "止盈金额");
+        requirePositive(lossAmount, "止损金额");
+
         pendingOrders.put(orderId, new PendingProtection(
                 symbol, orderId, side, profitAmount, lossAmount, System.currentTimeMillis()));
         log.info("限价开仓保护任务已登记: symbol={}, orderId={}, side={}, profitAmount={}, lossAmount={}, timeout={}s",
@@ -68,9 +74,9 @@ public class PendingOrderProtectionService {
         }
 
         String status = order.getStatus();
-        double executedQty = parseDouble(order.getExecutedQty());
+        BigDecimal executedQty = parseBigDecimal(order.getExecutedQty());
 
-        if (executedQty > 0) {
+        if (executedQty.compareTo(ZERO) > 0) {
             if ("PARTIALLY_FILLED".equals(status) || "FILLED".equals(status)
                     || "CANCELED".equals(status) || "EXPIRED".equals(status)
                     || "EXPIRED_IN_MATCH".equals(status)) {
@@ -95,12 +101,12 @@ public class PendingOrderProtectionService {
     }
 
     private void handleFilledQuantity(PendingProtection pending, QueryOrderResponse order,
-                                      String status, double executedQty) {
-        double avgPrice = parseDouble(order.getAvgPrice());
-        if (avgPrice <= 0) {
-            avgPrice = parseDouble(order.getPrice());
+                                      String status, BigDecimal executedQty) {
+        BigDecimal avgPrice = parseBigDecimal(order.getAvgPrice());
+        if (avgPrice.compareTo(ZERO) <= 0) {
+            avgPrice = parseBigDecimal(order.getPrice());
         }
-        if (avgPrice <= 0) {
+        if (avgPrice.compareTo(ZERO) <= 0) {
             log.warn("开仓已有成交但无法获得有效成交价格，等待下一次检查: symbol={}, orderId={}, status={}",
                     pending.symbol, pending.orderId, status);
             return;
@@ -131,13 +137,13 @@ public class PendingOrderProtectionService {
             return;
         }
 
-        double executedQty = parseDouble(finalOrder.getExecutedQty());
-        if (executedQty > 0) {
-            double avgPrice = parseDouble(finalOrder.getAvgPrice());
-            if (avgPrice <= 0) {
-                avgPrice = parseDouble(finalOrder.getPrice());
+        BigDecimal executedQty = parseBigDecimal(finalOrder.getExecutedQty());
+        if (executedQty.compareTo(ZERO) > 0) {
+            BigDecimal avgPrice = parseBigDecimal(finalOrder.getAvgPrice());
+            if (avgPrice.compareTo(ZERO) <= 0) {
+                avgPrice = parseBigDecimal(finalOrder.getPrice());
             }
-            if (avgPrice > 0) {
+            if (avgPrice.compareTo(ZERO) > 0) {
                 log.info("取消挂单时发现订单已经产生成交，转为保护已成交仓位: symbol={}, orderId={}, status={}, executedQty={}, avgPrice={}",
                         pending.symbol, pending.orderId, finalOrder.getStatus(), executedQty, avgPrice);
                 createProtectionOrders(pending, executedQty, avgPrice);
@@ -161,30 +167,33 @@ public class PendingOrderProtectionService {
         }
     }
 
-    private void createProtectionOrders(PendingProtection pending, double quantity, double entryPrice) {
+    private void createProtectionOrders(PendingProtection pending,
+                                        BigDecimal quantity,
+                                        BigDecimal entryPrice) {
         String symbol = pending.symbol;
         Side openSide = pending.side;
 
-        entryPrice = orderParameterCalculator.normalizeEntryPrice(symbol, entryPrice, Side.BUY.equals(openSide));
-        quantity = orderParameterCalculator.normalizeLimitQuantity(symbol, quantity, entryPrice);
-        if (quantity <= 0) {
+        entryPrice = orderParameterCalculator.normalizeEntryPrice(
+                symbol, entryPrice, Side.BUY.equals(openSide));
+        quantity = orderParameterCalculator.normalizeLimitQuantity(
+                symbol, quantity, entryPrice);
+        if (quantity.compareTo(ZERO) <= 0) {
             throw new IllegalStateException("成交数量经过交易规则修正后无效: symbol=" + symbol + ", quantity=" + quantity);
         }
 
-        double tp;
-        double sl;
+        BigDecimal tp;
+        BigDecimal sl;
         if (openSide == Side.BUY) {
-            tp = entryPrice + pending.profitAmount / quantity;
-            sl = entryPrice - pending.lossAmount / quantity;
+            tp = entryPrice.add(pending.profitAmount.divide(quantity));
+            sl = entryPrice.subtract(pending.lossAmount.divide(quantity));
         } else {
-            tp = entryPrice - pending.profitAmount / quantity;
-            sl = entryPrice + pending.lossAmount / quantity;
+            tp = entryPrice.subtract(pending.profitAmount.divide(quantity));
+            sl = entryPrice.add(pending.lossAmount.divide(quantity));
         }
 
         tp = orderParameterCalculator.normalizeTriggerPrice(symbol, tp, openSide, true);
         sl = orderParameterCalculator.normalizeTriggerPrice(symbol, sl, openSide, false);
 
-        // 保护单的平仓方向始终与开仓方向相反。
         Side closeSide = openSide == Side.BUY ? Side.SELL : Side.BUY;
 
         log.info("========== 开仓已产生成交，创建仓位级止盈止损 ==========");
@@ -224,16 +233,17 @@ public class PendingOrderProtectionService {
      */
     private void closeImmediatelyAfterProtectionTrigger(PendingProtection pending,
                                                          Side openSide,
-                                                         double quantity,
-                                                         double tp,
-                                                         double sl) {
+                                                         BigDecimal quantity,
+                                                         BigDecimal tp,
+                                                         BigDecimal sl) {
         log.warn("当前价格已经越过止盈/止损价格，直接市价平仓: symbol={}, orderId={}, side={}, tp={}, sl={}",
                 pending.symbol, pending.orderId, openSide, tp, sl);
 
         try {
             Side closeSide = openSide == Side.BUY ? Side.SELL : Side.BUY;
-            quantity = orderParameterCalculator.normalizeMarketQuantity(pending.symbol, quantity, 0D);
-            if (quantity <= 0) {
+            quantity = orderParameterCalculator.normalizeMarketQuantity(
+                    pending.symbol, quantity, ZERO);
+            if (quantity.compareTo(ZERO) <= 0) {
                 log.error("立即市价平仓数量无效，保留保护任务继续处理: symbol={}, orderId={}, quantity={}",
                         pending.symbol, pending.orderId, quantity);
                 return;
@@ -243,7 +253,7 @@ public class PendingOrderProtectionService {
             request.setSymbol(pending.symbol);
             request.setSide(closeSide);
             request.setType(OrderType.MARKET.name());
-            request.setQuantity(quantity);
+            request.setQuantity(quantity.doubleValue());
             request.setReduceOnly("true");
             request.setNewOrderRespType(NewOrderRespType.RESULT);
 
@@ -278,13 +288,13 @@ public class PendingOrderProtectionService {
      * 因此这里不再设置 quantity，也不设置 reduceOnly。
      */
     private boolean createProtectionAlgoOrder(String symbol, Side side, OrderType type,
-                                              double triggerPrice, String name) {
+                                              BigDecimal triggerPrice, String name) {
         NewAlgoOrderRequest request = new NewAlgoOrderRequest();
         request.setAlgoType("CONDITIONAL");
         request.setSymbol(symbol);
         request.setSide(side);
         request.setType(type.name());
-        request.setTriggerPrice(triggerPrice);
+        request.setTriggerPrice(triggerPrice.doubleValue());
         request.setClosePosition("TRUE");
         request.setNewOrderRespType(NewOrderRespType.RESULT);
 
@@ -301,22 +311,28 @@ public class PendingOrderProtectionService {
         return true;
     }
 
-    private double parseDouble(String value) {
-        return value == null || value.isBlank() ? 0D : Double.parseDouble(value);
+    private BigDecimal parseBigDecimal(String value) {
+        return value == null || value.isBlank() ? ZERO : new BigDecimal(value);
+    }
+
+    private void requirePositive(BigDecimal value, String name) {
+        if (value == null || value.compareTo(ZERO) <= 0) {
+            throw new IllegalArgumentException(name + "必须大于 0：" + value);
+        }
     }
 
     private static final class PendingProtection {
         private final String symbol;
         private final long orderId;
         private final Side side;
-        private final double profitAmount;
-        private final double lossAmount;
+        private final BigDecimal profitAmount;
+        private final BigDecimal lossAmount;
         private final long registerTime;
         private volatile boolean slCreated;
         private volatile boolean tpCreated;
 
         private PendingProtection(String symbol, long orderId, Side side,
-                                  double profitAmount, double lossAmount, long registerTime) {
+                                  BigDecimal profitAmount, BigDecimal lossAmount, long registerTime) {
             this.symbol = symbol;
             this.orderId = orderId;
             this.side = side;
