@@ -3,6 +3,7 @@ package com.lxf.bian_bot.trading.state;
 import com.lxf.bian_bot.thirdparty.binance.model.AccountInfo;
 import com.lxf.bian_bot.thirdparty.binance.model.OrderInfo;
 import com.lxf.bian_bot.thirdparty.binance.model.PositionInfo;
+import com.lxf.bian_bot.thirdparty.binance.model.ProtectionInfo;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
@@ -20,6 +21,7 @@ public class TradingState {
 
     private volatile AccountInfo accountInfo;
     private final Map<String, PositionInfo> positions = new ConcurrentHashMap<>();
+    private final Map<String, ProtectionInfo> protections = new ConcurrentHashMap<>();
     private final Map<Long, OrderInfo> orders = new ConcurrentHashMap<>();
     private final Map<String, Boolean> orderSubmitting = new ConcurrentHashMap<>();
     private final Map<String, TradingExecutionState> executionStates = new ConcurrentHashMap<>();
@@ -33,17 +35,57 @@ public class TradingState {
         if (positionInfo != null && positionInfo.getSymbol() != null) positions.put(positionInfo.getSymbol(), positionInfo);
     }
 
+    public void updateProtection(ProtectionInfo protectionInfo) {
+        if (protectionInfo == null || protectionInfo.getSymbol() == null || protectionInfo.getSymbol().isBlank()) return;
+        protections.put(protectionInfo.getSymbol(), protectionInfo);
+    }
+
+    public ProtectionInfo getProtection(String symbol) { return protections.get(symbol); }
+
+    public void updateTakeProfit(String symbol, double price, long algoId) {
+        ProtectionInfo protection = protections.computeIfAbsent(symbol,
+                key -> ProtectionInfo.builder().symbol(key).build());
+        protection.setTakeProfitPrice(price);
+        protection.setTakeProfitAlgoId(algoId);
+    }
+
+    public void updateStopLoss(String symbol, double price, long algoId) {
+        ProtectionInfo protection = protections.computeIfAbsent(symbol,
+                key -> ProtectionInfo.builder().symbol(key).build());
+        protection.setStopLossPrice(price);
+        protection.setStopLossAlgoId(algoId);
+    }
+
+    public void clearTakeProfit(String symbol) {
+        ProtectionInfo protection = protections.get(symbol);
+        if (protection == null) return;
+        protection.setTakeProfitPrice(0D);
+        protection.setTakeProfitAlgoId(0L);
+        removeProtectionIfEmpty(symbol, protection);
+    }
+
+    public void clearStopLoss(String symbol) {
+        ProtectionInfo protection = protections.get(symbol);
+        if (protection == null) return;
+        protection.setStopLossPrice(0D);
+        protection.setStopLossAlgoId(0L);
+        removeProtectionIfEmpty(symbol, protection);
+    }
+
+    public void clearProtection(String symbol) { if (symbol != null) protections.remove(symbol); }
+
+    private void removeProtectionIfEmpty(String symbol, ProtectionInfo protection) {
+        if (Double.compare(protection.getTakeProfitPrice(), 0D) == 0
+                && Double.compare(protection.getStopLossPrice(), 0D) == 0) {
+            protections.remove(symbol, protection);
+        }
+    }
+
     /**
      * 根据成交事件增量修正持仓数量。
      *
      * <p>主要用于 reduceOnly 平仓成交。在 User Data Stream 的 ACCOUNT_UPDATE 尚未到达，
      * 或某次事件没有及时刷新 TradingState 时，ORDER_TRADE_UPDATE 仍然可以保证本地状态及时归零。</p>
-     *
-     * @param symbol 交易对
-     * @param side 成交方向，BUY/SELL
-     * @param reduceOnly 是否只减仓
-     * @param lastFilledQty 本次成交数量（不是累计成交数量）
-     * @return 修正后的持仓；没有可修正的本地持仓时返回 null
      */
     public synchronized PositionInfo applyTradeToPosition(String symbol, String side,
                                                             boolean reduceOnly, double lastFilledQty) {
