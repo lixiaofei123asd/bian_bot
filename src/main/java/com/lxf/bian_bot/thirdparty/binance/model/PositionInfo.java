@@ -1,5 +1,6 @@
 package com.lxf.bian_bot.thirdparty.binance.model;
 
+import java.math.BigDecimal;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -11,90 +12,51 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class PositionInfo {
 
-    /**
-     * 交易对
-     */
+    /** 交易对 */
     private String symbol;
 
-    /**
-     * 持仓数量
-     *
-     * > 0 = LONG
-     * < 0 = SHORT
-     * = 0 = 无仓位
-     */
-    private double positionAmt;
+    /** 持仓数量：> 0 = LONG，< 0 = SHORT，= 0 = 无仓位 */
+    private BigDecimal positionAmt;
 
-    /**
-     * 开仓均价
-     */
-    private double entryPrice;
+    /** 开仓均价 */
+    private BigDecimal entryPrice;
 
-    /**
-     * 盈亏平衡价格
-     */
-    private double breakEvenPrice;
+    /** 盈亏平衡价格 */
+    private BigDecimal breakEvenPrice;
 
-    /**
-     * 当前标记价格
-     */
-    private double markPrice;
+    /** 当前标记价格 */
+    private BigDecimal markPrice;
 
-    /**
-     * 名义价值
-     */
-    private double notional;
+    /** 名义价值 */
+    private BigDecimal notional;
 
-    /**
-     * 未实现盈亏
-     */
-    private double unrealizedProfit;
+    /** 未实现盈亏 */
+    private BigDecimal unrealizedProfit;
 
-    /**
-     * 杠杆
-     */
+    /** 杠杆 */
     private int leverage;
 
-    /**
-     * 保证金模式
-     */
+    /** 保证金模式 */
     private String marginType;
 
-    /**
-     * 持仓方向
-     *
-     * BOTH / LONG / SHORT
-     */
+    /** 持仓方向：BOTH / LONG / SHORT */
     private String positionSide;
 
-    /**
-     * 强平价格
-     */
-    private double liquidationPrice;
+    /** 强平价格 */
+    private BigDecimal liquidationPrice;
 
-    /**
-     * 是否自动追加保证金
-     */
+    /** 是否自动追加保证金 */
     private boolean autoAddMargin;
 
-    /**
-     * 判断是否有仓位
-     */
     public boolean hasPosition() {
-        return Math.abs(positionAmt) > 0.00000001;
+        return positionAmt != null && positionAmt.compareTo(BigDecimal.ZERO) != 0;
     }
 
-    /**
-     * 判断是否多仓
-     */
     public boolean isLong() {
-        return positionAmt > 0;
+        return positionAmt != null && positionAmt.compareTo(BigDecimal.ZERO) > 0;
     }
 
-    /**
-     * 判断是否空仓
-     */
     public boolean isShort() {
-        return positionAmt < 0;
+        return positionAmt != null && positionAmt.compareTo(BigDecimal.ZERO) < 0;
     }
 }
