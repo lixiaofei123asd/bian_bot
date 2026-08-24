@@ -1,5 +1,6 @@
 package com.lxf.bian_bot.thirdparty.binance.model;
 
+import java.math.BigDecimal;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -11,68 +12,42 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class OrderInfo {
 
-    /**
-     * 交易对
-     */
+    /** 交易对 */
     private String symbol;
 
-    /**
-     * Binance Order ID
-     */
+    /** Binance Order ID */
     private long orderId;
 
-    /**
-     * 客户端订单 ID
-     */
+    /** 客户端订单 ID */
     private String clientOrderId;
 
-    /**
-     * BUY / SELL
-     */
+    /** BUY / SELL */
     private String side;
 
-    /**
-     * MARKET / LIMIT 等
-     */
+    /** MARKET / LIMIT 等 */
     private String type;
 
-    /**
-     * 原始数量
-     */
-    private double origQty;
+    /** 原始数量 */
+    private BigDecimal origQty;
 
-    /**
-     * 已成交数量
-     */
-    private double executedQty;
+    /** 已成交数量 */
+    private BigDecimal executedQty;
 
-    /**
-     * 成交均价
-     */
-    private double avgPrice;
+    /** 成交均价 */
+    private BigDecimal avgPrice;
 
-    /**
-     * 订单价格
-     */
-    private double price;
+    /** 订单价格 */
+    private BigDecimal price;
 
-    /**
-     * 订单状态
-     */
+    /** 订单状态 */
     private String status;
 
-    /**
-     * 是否 ReduceOnly
-     */
+    /** 是否 ReduceOnly */
     private boolean reduceOnly;
 
-    /**
-     * 持仓方向
-     */
+    /** 持仓方向 */
     private String positionSide;
 
-    /**
-     * 创建/更新时间
-     */
+    /** 创建/更新时间 */
     private long updateTime;
 }
