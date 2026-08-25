@@ -16,7 +16,6 @@ import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.PositionInformationV2Response;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.PositionInformationV2ResponseInner;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.Side;
-import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.SymbolOrderBookTickerResponse;
 import com.lxf.bian_bot.thirdparty.binance.enums.OrderType;
 import com.lxf.bian_bot.thirdparty.binance.enums.TimeInForce;
 import com.lxf.bian_bot.thirdparty.binance.enums.TradingMarginType;
@@ -24,10 +23,8 @@ import com.lxf.bian_bot.thirdparty.binance.model.LeverageInfo;
 import com.lxf.bian_bot.thirdparty.binance.model.OrderInfo;
 import com.lxf.bian_bot.thirdparty.binance.model.PositionInfo;
 import com.lxf.bian_bot.thirdparty.binance.service.BinanceTradeService;
-import com.lxf.bian_bot.trading.order.OrderParameterCalculator;
 import java.math.BigDecimal;
 import java.util.List;
-import java.util.Objects;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -36,10 +33,10 @@ import org.springframework.stereotype.Service;
 public class BinanceTradeServiceImpl implements BinanceTradeService {
 
     private final DerivativesTradingUsdsFuturesRestApi api;
-    private final OrderParameterCalculator orderParameterCalculator;
+    private final com.lxf.bian_bot.trading.order.OrderParameterCalculator orderParameterCalculator;
 
     public BinanceTradeServiceImpl(DerivativesTradingUsdsFuturesRestApi api,
-                                   OrderParameterCalculator orderParameterCalculator) {
+                                   com.lxf.bian_bot.trading.order.OrderParameterCalculator orderParameterCalculator) {
         this.api = api;
         this.orderParameterCalculator = orderParameterCalculator;
     }
@@ -89,7 +86,6 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
                 .build();
     }
 
-    /** Strategy 已经给出 TP/SL，这里只负责按 Binance 交易规则修正并发送保护单。 */
     @Override
     public void createProtectionOrders(String symbol,
                                        Side openSide,
@@ -150,24 +146,11 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
     }
 
     @Override
-    public OrderInfo createMarketOrder(String symbol, Side side, BigDecimal positionNotional) {
-        ApiResponse<SymbolOrderBookTickerResponse> bookTicker = api.symbolOrderBookTicker(symbol);
-        SymbolOrderBookTickerResponse bookTickerData = bookTicker.getData();
-        BigDecimal price = Side.BUY.equals(side)
-                ? new BigDecimal(Objects.requireNonNull(
-                        bookTickerData.getSymbolOrderBookTickerResponse1().getAskPrice()))
-                : new BigDecimal(Objects.requireNonNull(
-                        bookTickerData.getSymbolOrderBookTickerResponse1().getBidPrice()));
-
-        BigDecimal quantity = orderParameterCalculator.calculateMarketQuantity(
-                symbol, positionNotional, price);
-
+    public OrderInfo createMarketOrder(String symbol, Side side, BigDecimal quantity) {
         log.info("========== 市价下单 ==========");
         log.info("交易对：{}", symbol);
         log.info("方向：{}", side);
-        log.info("仓位名义价值：{}", positionNotional);
         log.info("实际数量：{}", quantity);
-        log.info("盘口价格：{}", price);
         log.info("==============================");
 
         NewOrderRequest request = new NewOrderRequest();
@@ -182,18 +165,12 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
     public OrderInfo createLimitOrder(String symbol,
                                       Side side,
                                       TimeInForce timeInForce,
-                                      BigDecimal positionNotional,
+                                      BigDecimal quantity,
                                       BigDecimal price) {
-        BigDecimal normalizedPrice = orderParameterCalculator.normalizeEntryPrice(
-                symbol, price, Side.BUY.equals(side));
-        BigDecimal quantity = orderParameterCalculator.calculateLimitQuantity(
-                symbol, positionNotional, normalizedPrice);
-
         log.info("========== 限价下单 ==========");
         log.info("交易对：{}", symbol);
         log.info("方向：{}", side);
-        log.info("仓位名义价值：{}", positionNotional);
-        log.info("修正后单价：{}", normalizedPrice);
+        log.info("修正后单价：{}", price);
         log.info("生效时间：{}", timeInForce.name());
         log.info("修正后数量：{}", quantity);
         log.info("==============================");
@@ -206,7 +183,7 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
                 com.binance.connector.client.derivatives_trading_usds_futures.rest.model.TimeInForce
                         .valueOf(timeInForce.name()));
         request.setQuantity(quantity.doubleValue());
-        request.setPrice(normalizedPrice.doubleValue());
+        request.setPrice(price.doubleValue());
         request.setNewOrderRespType(NewOrderRespType.RESULT);
         return newOrder(request, "限价下单失败！");
     }
