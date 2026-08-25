@@ -2,19 +2,19 @@ package com.lxf.bian_bot.analysis.indicator;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lxf.bian_bot.analysis.Indicator;
-import com.lxf.bian_bot.analysis.model.IndicatorResult;
 import com.lxf.bian_bot.analysis.MarketDataProvider;
 import com.lxf.bian_bot.analysis.enums.IndicatorAction;
 import com.lxf.bian_bot.analysis.enums.IndicatorSignal;
-import com.lxf.bian_bot.thirdparty.binance.service.BinanceMarketService;
-import com.lxf.bian_bot.thirdparty.deepseek.DeepSeekClient;
-import com.lxf.bian_bot.thirdparty.deepseek.DeepSeekIndicatorResult;
+import com.lxf.bian_bot.analysis.model.IndicatorResult;
 import com.lxf.bian_bot.thirdparty.binance.model.Binance24hTicker;
 import com.lxf.bian_bot.thirdparty.binance.model.BinanceBookTicker;
 import com.lxf.bian_bot.thirdparty.binance.model.BinanceMarkPrice;
 import com.lxf.bian_bot.thirdparty.binance.model.BinanceOrderBook;
 import com.lxf.bian_bot.thirdparty.binance.model.BinancePriceTicker;
 import com.lxf.bian_bot.thirdparty.binance.model.BinanceRecentTrade;
+import com.lxf.bian_bot.thirdparty.binance.service.BinanceMarketService;
+import com.lxf.bian_bot.thirdparty.deepseek.DeepSeekClient;
+import com.lxf.bian_bot.thirdparty.deepseek.DeepSeekIndicatorResult;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -51,9 +51,6 @@ public class IndicatorDeepSeek implements Indicator {
         return calculateWithContext(symbol, Map.of());
     }
 
-    /**
-     * 在普通行情数据之外，为 AI 追加策略上下文，例如当前持仓和活动订单。
-     */
     public IndicatorResult calculateWithContext(String symbol, Map<String, Object> strategyContext) {
         try {
             Map<String, Object> marketData = collectMarketData(symbol, strategyContext);
@@ -77,11 +74,10 @@ public class IndicatorDeepSeek implements Indicator {
                     .entryPrice(result.getEntryPrice())
                     .takeProfitPrice(result.getTakeProfitPrice())
                     .stopLossPrice(result.getStopLossPrice())
-                    .usdtAmount(result.getUsdtAmount())
                     .reason(result.getReason())
                     .build();
 
-            log.info("DeepSeek指标: symbol={}, signal={}, action={}, confidence={}, minEntryPrice={}, maxEntryPrice={}, entryPrice={}, takeProfitPrice={}, stopLossPrice={}, usdtAmount={}, reason={}",
+            log.info("DeepSeek指标: symbol={}, signal={}, action={}, confidence={}, minEntryPrice={}, maxEntryPrice={}, entryPrice={}, takeProfitPrice={}, stopLossPrice={}, reason={}",
                     symbol,
                     indicatorResult.getSignal(),
                     indicatorResult.getAction(),
@@ -91,7 +87,6 @@ public class IndicatorDeepSeek implements Indicator {
                     indicatorResult.getEntryPrice(),
                     indicatorResult.getTakeProfitPrice(),
                     indicatorResult.getStopLossPrice(),
-                    indicatorResult.getUsdtAmount(),
                     indicatorResult.getReason());
 
             return indicatorResult;
@@ -149,7 +144,6 @@ public class IndicatorDeepSeek implements Indicator {
               "entryPrice":0,
               "takeProfitPrice":0,
               "stopLossPrice":0,
-              "usdtAmount":0,
               "reason":"简短原因"
             }
 
@@ -166,10 +160,10 @@ public class IndicatorDeepSeek implements Indicator {
             3. ADJUST_PROTECTION 只能在趋势、波动或风险结构发生明显变化时使用；
             4. 不要为了每次分析都有变化而修改 TP/SL；
             5. 如果 action=HOLD，可以把 takeProfitPrice、stopLossPrice 返回 null；
-            6. 如果 action=WAIT 或 signal=NEUTRAL，交易相关价格和金额可以返回 null；
+            6. 如果 action=WAIT 或 signal=NEUTRAL，交易相关价格可以返回 null；
             7. confidence 返回 0 到 100 的整数。
 
-            对 OPEN：给出合理的入场区间、最佳入场价格、止盈、止损和 USDT 金额。
+            对 OPEN：给出合理的入场区间、最佳入场价格、止盈和止损。
             对 ADJUST_PROTECTION：只填写确实需要调整的止盈/止损价格。
 
             请重点分析最近 50 根 15 分钟 K 线形成的趋势、波动、支撑阻力、成交量变化，
