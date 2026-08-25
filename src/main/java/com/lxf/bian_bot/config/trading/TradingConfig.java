@@ -16,8 +16,8 @@ public class TradingConfig {
     /** 是否允许真正发送交易订单。 */
     private final boolean enabled;
 
-    /** 每次开仓使用的 USDT 金额。 */
-    private final BigDecimal usdtAmount;
+    /** 每次开仓使用的保证金金额（USDT）。实际仓位价值 = 保证金 × 杠杆。 */
+    private final BigDecimal marginAmount;
 
     /** 下单模式：LIMIT 或 MARKET。 */
     private final String orderType;
