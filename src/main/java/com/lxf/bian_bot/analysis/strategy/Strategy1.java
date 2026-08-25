@@ -70,10 +70,31 @@ public class Strategy1 implements Strategy {
         return TradingSignal.WAIT;
     }
 
-    /**
-     * Strategy1 自己决定保护方式：按配置的盈利/亏损金额反推价格。
-     * 这里的 TP/SL 计算属于策略逻辑，不再属于 PendingOrderProtectionService。
-     */
+    /** Strategy1 自己决定本策略使用的保证金。 */
+    @Override
+    public TradingDecision decide(String symbol) {
+        TradingSignal signal = execute(symbol);
+        TradingDecision.DecisionType decisionType = switch (signal) {
+            case LONG -> TradingDecision.DecisionType.ENTER_LONG;
+            case SHORT -> TradingDecision.DecisionType.ENTER_SHORT;
+            case WAIT -> TradingDecision.DecisionType.WAIT;
+        };
+        TradingDecision.Direction direction = switch (signal) {
+            case LONG -> TradingDecision.Direction.LONG;
+            case SHORT -> TradingDecision.Direction.SHORT;
+            case WAIT -> null;
+        };
+
+        return TradingDecision.builder()
+                .symbol(symbol)
+                .decision(decisionType)
+                .direction(direction)
+                .marginAmount(tradingConfig.getMarginAmount())
+                .reason("Strategy1 信号: " + signal)
+                .build();
+    }
+
+    /** Strategy1 自己决定保护方式：按盈利/亏损金额反推价格。 */
     @Override
     public ProtectionConfig calculateProtection(String symbol,
                                                 TradingDecision.Direction direction,
