@@ -1,6 +1,7 @@
 package com.lxf.bian_bot.analysis;
 
 import com.lxf.bian_bot.analysis.enums.TradingSignal;
+import com.lxf.bian_bot.analysis.model.ProtectionConfig;
 import com.lxf.bian_bot.model.TradingDecision;
 import java.math.BigDecimal;
 import java.util.List;
@@ -38,6 +39,17 @@ public interface Strategy {
                 .direction(direction)
                 .reason("策略: " + getName() + ", 信号: " + signal)
                 .build();
+    }
+
+    /**
+     * 仓位成交后，由策略决定是否设置 TP/SL，以及具体保护价格。
+     * 默认不设置保护，避免任何通用服务替策略做交易决策。
+     */
+    default ProtectionConfig calculateProtection(String symbol,
+                                                 TradingDecision.Direction direction,
+                                                 BigDecimal quantity,
+                                                 BigDecimal entryPrice) {
+        return ProtectionConfig.disabled();
     }
 
     /**
