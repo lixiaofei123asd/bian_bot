@@ -2,8 +2,10 @@ package com.lxf.bian_bot.analysis.strategy;
 
 import com.lxf.bian_bot.analysis.Indicator;
 import com.lxf.bian_bot.analysis.Strategy;
+import com.lxf.bian_bot.analysis.enums.IndicatorSignal;
 import com.lxf.bian_bot.analysis.enums.TradingSignal;
 import com.lxf.bian_bot.analysis.indicator.IndicatorSecondKlineTrend;
+import com.lxf.bian_bot.analysis.model.IndicatorResult;
 import com.lxf.bian_bot.model.TradingDecision;
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -49,9 +51,18 @@ public class Strategy1 implements Strategy {
 
     @Override
     public TradingSignal execute(String symbol) {
-        TradingSignal signal = Strategy.super.execute(symbol);
+        int upCount = 0;
+        int downCount = 0;
+        for (Indicator indicator : getIndicators()) {
+            IndicatorResult result = indicator.calculate(symbol);
+            if (result == null || result.getSignal() == null) continue;
+            if (result.getSignal() == IndicatorSignal.UP) upCount++;
+            else if (result.getSignal() == IndicatorSignal.DOWN) downCount++;
+        }
         lastExecuteTimes.put(symbol, Instant.now());
-        return signal;
+        if (upCount >= getRequiredMatchCount()) return TradingSignal.LONG;
+        if (downCount >= getRequiredMatchCount()) return TradingSignal.SHORT;
+        return TradingSignal.WAIT;
     }
 
     @Override
