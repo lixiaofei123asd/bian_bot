@@ -3,11 +3,7 @@ package com.lxf.bian_bot.config.strategy;
 import java.util.List;
 import java.util.Map;
 
-/**
- * 策略业务配置。
- *
- * <p>该类只提供策略业务需要的配置，不负责读取 application.yaml。</p>
- */
+/** 策略业务配置。 */
 public class StrategyConfig {
 
     private final Map<String, String> symbols;
@@ -16,24 +12,17 @@ public class StrategyConfig {
         this.symbols = symbols;
     }
 
-    /**
-     * 获取指定交易对对应的策略名称。
-     */
+    public Map<String, String> getSymbols() {
+        return symbols;
+    }
+
     public String getStrategyName(String symbol) {
-        if (symbol == null) {
-            return null;
-        }
+        if (symbol == null) return null;
         return symbols.get(symbol.toUpperCase());
     }
 
-    /**
-     * 获取当前策略负责的所有交易对。
-     */
     public List<String> getSymbolsForStrategy(String strategyName) {
-        if (strategyName == null || strategyName.isBlank()) {
-            return List.of();
-        }
-
+        if (strategyName == null || strategyName.isBlank()) return List.of();
         return symbols.entrySet().stream()
                 .filter(entry -> strategyName.equalsIgnoreCase(entry.getValue()))
                 .map(Map.Entry::getKey)
