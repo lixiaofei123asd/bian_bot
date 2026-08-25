@@ -73,7 +73,7 @@ public class StrategyExecutionService {
         try {
             switch (decision.getDecision()) {
                 case EXIT -> executeExit(symbol);
-                case ADJUST_PROTECTION -> log.info("Strategy 请求调整保护单: symbol={}", symbol);
+                case ADJUST_PROTECTION -> executeAdjustProtection(decision);
                 case ENTER_LONG, ENTER_SHORT -> executeEntry(decision);
                 default -> {
                     return;
@@ -87,7 +87,10 @@ public class StrategyExecutionService {
         }
     }
 
-    /** 执行 Strategy 已经计算好的 TP/SL；这里只调用 Binance，不计算保护价格。 */
+    /**
+     * 执行 Strategy 已经计算好的 TP/SL；这里只调用 Binance，不计算保护价格。
+     * 该方法既用于刚开仓后的保护，也用于程序启动后已有持仓的保护恢复/调整。
+     */
     public void executeProtection(String symbol,
                                   Side openSide,
                                   BigDecimal quantity,
@@ -119,6 +122,56 @@ public class StrategyExecutionService {
             }
             throw e;
         }
+    }
+
+    /**
+     * 执行策略对已有持仓提出的 ADJUST_PROTECTION 决策。
+     *
+     * <p>此场景通常发生在程序启动前仓位已经存在时，因此不能依赖
+     * TradingDecision.entryPrice 或重新计算开仓数量。直接读取当前持仓的真实数量，
+     * 并使用 Strategy 给出的 TP/SL 创建保护单。</p>
+     */
+    private void executeAdjustProtection(TradingDecision decision) {
+        String symbol = decision.getSymbol();
+
+        if (!tradingConfig.isEnabled()) {
+            log.info("交易执行未启用，忽略策略保护调整: symbol={}", symbol);
+            return;
+        }
+
+        if (decision.getTakeProfitPrice() == null || decision.getStopLossPrice() == null) {
+            throw new IllegalArgumentException("ADJUST_PROTECTION 缺少 TP/SL: symbol=" + symbol);
+        }
+
+        PositionInfo position = tradingState.getPosition(symbol);
+        if (position == null || !position.hasPosition()) {
+            log.info("策略要求调整保护，但当前没有持仓: symbol={}", symbol);
+            return;
+        }
+
+        BigDecimal positionAmount = position.getPositionAmt();
+        BigDecimal quantity = orderParameterCalculator.normalizeMarketQuantity(
+                symbol, positionAmount.abs(), BigDecimal.ZERO);
+        if (quantity.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalStateException("已有持仓数量无效，无法设置保护单: symbol=" + symbol
+                    + ", positionAmt=" + positionAmount);
+        }
+
+        Side openSide = positionAmount.compareTo(BigDecimal.ZERO) > 0 ? Side.BUY : Side.SELL;
+        ProtectionConfig protection = new ProtectionConfig(
+                true,
+                decision.getTakeProfitPrice(),
+                decision.getStopLossPrice());
+
+        log.info("执行已有持仓保护: symbol={}, side={}, quantity={}, entryPrice={}, tp={}, sl={}",
+                symbol,
+                openSide,
+                quantity,
+                position.getEntryPrice(),
+                protection.takeProfitPrice(),
+                protection.stopLossPrice());
+
+        executeProtection(symbol, openSide, quantity, protection);
     }
 
     private void executeEntry(TradingDecision decision) {
