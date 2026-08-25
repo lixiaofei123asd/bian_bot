@@ -25,7 +25,6 @@ import com.lxf.bian_bot.thirdparty.binance.model.OrderInfo;
 import com.lxf.bian_bot.thirdparty.binance.model.PositionInfo;
 import com.lxf.bian_bot.thirdparty.binance.service.BinanceTradeService;
 import com.lxf.bian_bot.trading.order.OrderParameterCalculator;
-import com.lxf.bian_bot.trading.service.PendingOrderProtectionService;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.List;
@@ -41,14 +40,11 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
 
     private final DerivativesTradingUsdsFuturesRestApi api;
     private final OrderParameterCalculator orderParameterCalculator;
-    private final PendingOrderProtectionService pendingOrderProtectionService;
 
     public BinanceTradeServiceImpl(DerivativesTradingUsdsFuturesRestApi api,
-                                   OrderParameterCalculator orderParameterCalculator,
-                                   PendingOrderProtectionService pendingOrderProtectionService) {
+                                   OrderParameterCalculator orderParameterCalculator) {
         this.api = api;
         this.orderParameterCalculator = orderParameterCalculator;
-        this.pendingOrderProtectionService = pendingOrderProtectionService;
     }
 
     @Override
