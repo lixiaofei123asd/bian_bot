@@ -70,7 +70,6 @@ public class Strategy1 implements Strategy {
         return TradingSignal.WAIT;
     }
 
-    /** Strategy1 自己决定本策略使用的保证金。 */
     @Override
     public TradingDecision decide(String symbol) {
         TradingSignal signal = execute(symbol);
@@ -89,7 +88,6 @@ public class Strategy1 implements Strategy {
                 .symbol(symbol)
                 .decision(decisionType)
                 .direction(direction)
-                .marginAmount(tradingConfig.getMarginAmount())
                 .reason("Strategy1 信号: " + signal)
                 .build();
     }
