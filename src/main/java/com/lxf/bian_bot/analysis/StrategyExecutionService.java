@@ -13,7 +13,6 @@ import com.lxf.bian_bot.thirdparty.binance.enums.TradingMarginType;
 import com.lxf.bian_bot.thirdparty.binance.model.OrderInfo;
 import com.lxf.bian_bot.thirdparty.binance.model.PositionInfo;
 import com.lxf.bian_bot.thirdparty.binance.service.BinanceTradeService;
-import com.lxf.bian_bot.trading.service.PendingOrderProtectionService;
 import com.lxf.bian_bot.trading.state.TradingExecutionState;
 import com.lxf.bian_bot.trading.state.TradingState;
 import java.math.BigDecimal;
@@ -34,7 +33,6 @@ public class StrategyExecutionService {
     private final TradingConfig tradingConfig;
     private final SymbolRuleCache symbolRuleCache;
     private final TickerCache tickerCache;
-    private final PendingOrderProtectionService pendingOrderProtectionService;
     private final StrategyRegistry strategyRegistry;
     private final StrategyConfig strategyConfig;
     private final ApplicationEventPublisher eventPublisher;
@@ -44,7 +42,6 @@ public class StrategyExecutionService {
                                      TradingConfig tradingConfig,
                                      SymbolRuleCache symbolRuleCache,
                                      TickerCache tickerCache,
-                                     PendingOrderProtectionService pendingOrderProtectionService,
                                      StrategyRegistry strategyRegistry,
                                      StrategyConfig strategyConfig,
                                      ApplicationEventPublisher eventPublisher) {
@@ -53,7 +50,6 @@ public class StrategyExecutionService {
         this.tradingConfig = tradingConfig;
         this.symbolRuleCache = symbolRuleCache;
         this.tickerCache = tickerCache;
-        this.pendingOrderProtectionService = pendingOrderProtectionService;
         this.strategyRegistry = strategyRegistry;
         this.strategyConfig = strategyConfig;
         this.eventPublisher = eventPublisher;
@@ -111,22 +107,17 @@ public class StrategyExecutionService {
                         executedQty != null && executedQty.compareTo(BigDecimal.ZERO) > 0
                                 ? TradingExecutionState.POSITION_OPEN : TradingExecutionState.ORDER_OPEN);
 
-                Side openSide = TradingDecision.DecisionType.ENTER_LONG.equals(decision.getDecision()) ? Side.BUY : Side.SELL;
-
-                // 限价开仓未成交：只登记待成交订单，PendingOrderProtectionService 不参与 TP/SL 决策。
-                if ("LIMIT".equalsIgnoreCase(tradingConfig.getOrderType())
-                        && (executedQty == null || executedQty.compareTo(BigDecimal.ZERO) <= 0)) {
-                    pendingOrderProtectionService.register(symbol, orderInfo.getOrderId(), openSide);
-                }
-
-                // 市价单通常立即成交；统一发布成交事件，由对应 Strategy 决定 TP/SL。
                 if ("MARKET".equalsIgnoreCase(tradingConfig.getOrderType())
                         && executedQty != null && executedQty.compareTo(BigDecimal.ZERO) > 0) {
                     BigDecimal entryPrice = orderInfo.getAvgPrice();
                     if (entryPrice == null || entryPrice.compareTo(BigDecimal.ZERO) <= 0) entryPrice = orderInfo.getPrice();
                     if (entryPrice != null && entryPrice.compareTo(BigDecimal.ZERO) > 0) {
                         eventPublisher.publishEvent(new OrderFilledEvent(
-                                symbol, orderInfo.getOrderId(), openSide, executedQty, entryPrice));
+                                symbol,
+                                orderInfo.getOrderId(),
+                                TradingDecision.DecisionType.ENTER_LONG.equals(decision.getDecision()) ? Side.BUY : Side.SELL,
+                                executedQty,
+                                entryPrice));
                     }
                 }
             } finally {
@@ -139,6 +130,7 @@ public class StrategyExecutionService {
         }
     }
 
+    /** 保护单无法创建且价格已经越过触发价时，由具体 Strategy 决定是否退出。 */
     public void handleProtectionTrigger(String symbol, TradingDecision.Direction direction,
                                         BigDecimal quantity, BigDecimal takeProfitPrice, BigDecimal stopLossPrice) {
         String strategyName = strategyConfig.getStrategyName(symbol);
@@ -156,7 +148,7 @@ public class StrategyExecutionService {
         execute(decision);
     }
 
-    /** 执行 Strategy 已经决定好的 TP/SL；本方法不参与保护价格计算。 */
+    /** 执行 Strategy 已经决定好的 TP/SL。本方法只负责执行，不参与价格/金额计算。 */
     public void executeProtection(String symbol,
                                   Side openSide,
                                   BigDecimal quantity,
@@ -174,8 +166,11 @@ public class StrategyExecutionService {
         } catch (ApiException e) {
             if (e.getMessage() != null && e.getMessage().contains(IMMEDIATE_TRIGGER_CODE)) {
                 eventPublisher.publishEvent(new ProtectionTriggerEvent(
-                        symbol, openSide, quantity,
-                        protectionConfig.takeProfitPrice(), protectionConfig.stopLossPrice()));
+                        symbol,
+                        openSide,
+                        quantity,
+                        protectionConfig.takeProfitPrice(),
+                        protectionConfig.stopLossPrice()));
                 return;
             }
             throw e;
@@ -189,24 +184,16 @@ public class StrategyExecutionService {
         if (price == null || price.compareTo(BigDecimal.ZERO) <= 0) price = getLimitOrderPrice(symbol, side);
 
         BigDecimal positionNotional = decision.getUsdtAmount();
-        if (positionNotional == null || positionNotional.compareTo(BigDecimal.ZERO) <= 0) {
-            positionNotional = calculatePositionNotional(symbol);
-        }
+        if (positionNotional == null || positionNotional.compareTo(BigDecimal.ZERO) <= 0) positionNotional = calculatePositionNotional(symbol);
 
-        if ("MARKET".equalsIgnoreCase(tradingConfig.getOrderType())) {
-            return tradeService.createMarketOrder(symbol, side, positionNotional);
-        }
-        if (!"LIMIT".equalsIgnoreCase(tradingConfig.getOrderType())) {
-            throw new IllegalArgumentException("不支持的下单模式: " + tradingConfig.getOrderType());
-        }
+        if ("MARKET".equalsIgnoreCase(tradingConfig.getOrderType())) return tradeService.createMarketOrder(symbol, side, positionNotional);
+        if (!"LIMIT".equalsIgnoreCase(tradingConfig.getOrderType())) throw new IllegalArgumentException("不支持的下单模式: " + tradingConfig.getOrderType());
         return tradeService.createLimitOrder(symbol, side, TimeInForce.GTC, positionNotional, price);
     }
 
     private BigDecimal calculatePositionNotional(String symbol) {
         BigDecimal marginAmount = tradingConfig.getMarginAmount();
-        if (marginAmount == null || marginAmount.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new IllegalArgumentException("保证金金额必须大于 0：" + marginAmount);
-        }
+        if (marginAmount == null || marginAmount.compareTo(BigDecimal.ZERO) <= 0) throw new IllegalArgumentException("保证金金额必须大于 0：" + marginAmount);
         return marginAmount.multiply(BigDecimal.valueOf(getEffectiveLeverage(symbol)));
     }
 
@@ -219,22 +206,16 @@ public class StrategyExecutionService {
     private void prepareTrading(String symbol) {
         TradingMarginType target = TradingMarginType.valueOf(tradingConfig.getMarginType().toUpperCase());
         String current = tradeService.getMarginType(symbol).toUpperCase();
-        if (!target.name().contains(current) && !tradeService.setMarginType(symbol, target)) {
-            throw new IllegalStateException("设置保证金模式失败: symbol=" + symbol + ", target=" + target);
-        }
+        if (!target.name().contains(current) && !tradeService.setMarginType(symbol, target)) throw new IllegalStateException("设置保证金模式失败: symbol=" + symbol + ", target=" + target);
         if (tradingConfig.isAutoSetLeverage()) tradeService.setLeverage(symbol, getEffectiveLeverage(symbol));
     }
 
     private BigDecimal getLimitOrderPrice(String symbol, Side side) {
-        if (!"LATEST_PRICE".equalsIgnoreCase(tradingConfig.getLimitPriceSource())) {
-            throw new IllegalArgumentException("不支持的限价单价格来源: " + tradingConfig.getLimitPriceSource());
-        }
+        if (!"LATEST_PRICE".equalsIgnoreCase(tradingConfig.getLimitPriceSource())) throw new IllegalArgumentException("不支持的限价单价格来源: " + tradingConfig.getLimitPriceSource());
         var ticker = tickerCache.get(symbol);
         if (ticker == null) throw new IllegalStateException("WebSocket 尚未收到最新 BookTicker: symbol=" + symbol);
         BigDecimal price = Side.BUY.equals(side) ? ticker.getAskPrice() : ticker.getBidPrice();
-        if (price == null || price.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new IllegalStateException("WebSocket 最新价格无效: symbol=" + symbol + ", price=" + price);
-        }
+        if (price == null || price.compareTo(BigDecimal.ZERO) <= 0) throw new IllegalStateException("WebSocket 最新价格无效: symbol=" + symbol + ", price=" + price);
         return price;
     }
 }
