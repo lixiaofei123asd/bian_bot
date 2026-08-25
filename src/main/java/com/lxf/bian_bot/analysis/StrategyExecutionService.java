@@ -124,13 +124,7 @@ public class StrategyExecutionService {
         }
     }
 
-    /**
-     * 执行策略对已有持仓提出的 ADJUST_PROTECTION 决策。
-     *
-     * <p>此场景通常发生在程序启动前仓位已经存在时，因此不能依赖
-     * TradingDecision.entryPrice 或重新计算开仓数量。直接读取当前持仓的真实数量，
-     * 并使用 Strategy 给出的 TP/SL 创建保护单。</p>
-     */
+    /** 执行策略对已有持仓提出的 ADJUST_PROTECTION 决策。 */
     private void executeAdjustProtection(TradingDecision decision) {
         String symbol = decision.getSymbol();
 
@@ -143,9 +137,10 @@ public class StrategyExecutionService {
             throw new IllegalArgumentException("ADJUST_PROTECTION 缺少 TP/SL: symbol=" + symbol);
         }
 
-        PositionInfo position = tradingState.getPosition(symbol);
+        // 保护单同样以 Binance 当前真实持仓为准，不能因为本地状态尚未同步而漏掉保护。
+        PositionInfo position = refreshPositionFromBinance(symbol);
         if (position == null || !position.hasPosition()) {
-            log.info("策略要求调整保护，但当前没有持仓: symbol={}", symbol);
+            log.info("策略要求调整保护，但 Binance 当前没有持仓: symbol={}", symbol);
             return;
         }
 
@@ -174,16 +169,31 @@ public class StrategyExecutionService {
         executeProtection(symbol, openSide, quantity, protection);
     }
 
+    /**
+     * 执行开仓。
+     *
+     * <p>TradingState 用于本地状态判断，但 Binance 实际持仓是最终事实来源。
+     * 每次 ENTER 前都主动查询一次 Binance，避免程序启动前已有持仓、WebSocket 尚未同步
+     * 或本地状态滞后时再次开仓。</p>
+     */
     private void executeEntry(TradingDecision decision) {
         String symbol = decision.getSymbol();
 
-        PositionInfo position = tradingState.getPosition(symbol);
-        if (position != null && position.hasPosition()) {
+        PositionInfo actualPosition = refreshPositionFromBinance(symbol);
+        if (actualPosition != null && actualPosition.hasPosition()) {
             tradingState.updateExecutionState(symbol, TradingExecutionState.POSITION_OPEN);
+            log.info("当前已有 Binance 持仓，忽略本次开仓信号: symbol={}, decision={}, positionAmt={}, entryPrice={}, positionSide={}",
+                    symbol,
+                    decision.getDecision(),
+                    actualPosition.getPositionAmt(),
+                    actualPosition.getEntryPrice(),
+                    actualPosition.getPositionSide());
             return;
         }
+
         if (!tradingState.getOpenOrders(symbol).isEmpty()) {
             tradingState.updateExecutionState(symbol, TradingExecutionState.ORDER_OPEN);
+            log.info("当前已有未完成订单，忽略本次开仓信号: symbol={}, decision={}", symbol, decision.getDecision());
             return;
         }
         if (!tradingState.startOrderSubmitting(symbol)) {
@@ -213,13 +223,6 @@ public class StrategyExecutionService {
                     && avgPrice != null
                     && avgPrice.compareTo(BigDecimal.ZERO) > 0;
 
-            /*
-             * 市价单通常会在 REST newOrder 响应中直接返回 FILLED。
-             * User Data Stream 是最终成交事实来源，但不能假设它一定先于 REST 响应到达。
-             * 因此这里在 REST 响应已经确认成交时同步发布同一个 OrderFilledEvent。
-             * StrategyProtectionHandler 自带 orderId 去重，所以即使随后 User Data Stream
-             * 再发布一次，也只会执行一次 TP/SL。
-             */
             if (filled) {
                 Side openSide = TradingDecision.DecisionType.ENTER_LONG.equals(decision.getDecision())
                         ? Side.BUY : Side.SELL;
@@ -242,6 +245,19 @@ public class StrategyExecutionService {
         }
     }
 
+    /**
+     * 从 Binance 获取当前真实持仓，并同步到 TradingState。
+     * TradingState 仍然作为本地状态缓存，但开仓/保护这类关键操作不再只相信缓存。
+     */
+    private PositionInfo refreshPositionFromBinance(String symbol) {
+        PositionInfo position = tradeService.getPositionInfo(symbol);
+        if (position != null) {
+            tradingState.updatePosition(position);
+            tradingState.refreshExecutionState(symbol);
+        }
+        return position;
+    }
+
     private void executeExit(String symbol) {
         if (!tradingConfig.isEnabled()) {
             log.info("交易执行未启用，忽略策略平仓决策: symbol={}", symbol);
@@ -250,13 +266,7 @@ public class StrategyExecutionService {
         tradeService.closeMarketOrder(symbol);
     }
 
-    /**
-     * 根据交易配置的保证金和实际杠杆计算最终数量。
-     *
-     * <p>positionNotional = marginAmount × leverage</p>
-     * <p>quantity = positionNotional ÷ entryPrice</p>
-     * <p>随后由 OrderParameterCalculator 按 Binance 交易规则修正数量。</p>
-     */
+    /** 根据交易配置的保证金和实际杠杆计算最终数量。 */
     private OrderInfo createEntryOrder(TradingDecision decision) {
         String symbol = decision.getSymbol();
         Side side = TradingDecision.DecisionType.ENTER_LONG.equals(decision.getDecision())
@@ -339,7 +349,7 @@ public class StrategyExecutionService {
         }
         BigDecimal price = Side.BUY.equals(side) ? ticker.getAskPrice() : ticker.getBidPrice();
         if (price == null || price.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new IllegalStateException("WebSocket 最新盘口价格无效: symbol=" + symbol + ", price=" + price);
+            throw new IllegalStateException("WebSocket 尚未收到有效盘口价格: symbol=" + symbol);
         }
         return price;
     }
