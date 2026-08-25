@@ -1,60 +1,48 @@
 package com.lxf.bian_bot.analysis.strategy;
 
-import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.Side;
 import com.lxf.bian_bot.analysis.Indicator;
+import com.lxf.bian_bot.analysis.Strategy;
 import com.lxf.bian_bot.analysis.enums.IndicatorAction;
 import com.lxf.bian_bot.analysis.enums.IndicatorSignal;
 import com.lxf.bian_bot.analysis.enums.TradingSignal;
 import com.lxf.bian_bot.analysis.indicator.IndicatorDeepSeek;
 import com.lxf.bian_bot.analysis.model.IndicatorResult;
-import com.lxf.bian_bot.cache.TickerCache;
-import com.lxf.bian_bot.config.SymbolRuleCache;
-import com.lxf.bian_bot.config.strategy.StrategyConfig;
-import com.lxf.bian_bot.config.trading.TradingConfig;
 import com.lxf.bian_bot.model.TradingDecision;
-import com.lxf.bian_bot.thirdparty.binance.enums.TimeInForce;
 import com.lxf.bian_bot.thirdparty.binance.model.AccountInfo;
 import com.lxf.bian_bot.thirdparty.binance.model.BinancePriceTicker;
 import com.lxf.bian_bot.thirdparty.binance.model.OrderInfo;
 import com.lxf.bian_bot.thirdparty.binance.model.PositionInfo;
 import com.lxf.bian_bot.thirdparty.binance.service.BinanceMarketService;
-import com.lxf.bian_bot.thirdparty.binance.service.BinanceTradeService;
-import com.lxf.bian_bot.thirdparty.binance.service.BinanceWebSocketStreamsService;
-import com.lxf.bian_bot.trading.service.PendingOrderProtectionService;
 import com.lxf.bian_bot.trading.state.TradingState;
 import java.math.BigDecimal;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 @Slf4j
 @Component
-public class AiStrategy extends BaseStrategy {
+public class AiStrategy implements Strategy {
 
     private static final Duration NO_POSITION_INTERVAL = Duration.ofMinutes(5);
     private static final Duration POSITION_INTERVAL = Duration.ofMinutes(3);
 
     private final IndicatorDeepSeek deepSeek;
     private final BinanceMarketService marketService;
+    private final TradingState tradingState;
+    private final ConcurrentMap<String, Instant> lastExecuteTimes = new ConcurrentHashMap<>();
 
-    public AiStrategy(
-            IndicatorDeepSeek deepSeek,
-            BinanceMarketService marketService,
-            StrategyConfig strategyConfig,
-            BinanceWebSocketStreamsService webSocketStreamsService,
-            TickerCache tickerCache,
-            BinanceTradeService tradeService,
-            TradingState tradingState,
-            TradingConfig tradingConfig,
-            SymbolRuleCache symbolRuleCache,
-            PendingOrderProtectionService pendingOrderProtectionService) {
-        super(strategyConfig, webSocketStreamsService, tickerCache, tradeService,
-                tradingState, tradingConfig, symbolRuleCache, pendingOrderProtectionService);
+    public AiStrategy(IndicatorDeepSeek deepSeek,
+                      BinanceMarketService marketService,
+                      TradingState tradingState) {
         this.deepSeek = deepSeek;
         this.marketService = marketService;
+        this.tradingState = tradingState;
     }
 
     @Override
@@ -73,26 +61,26 @@ public class AiStrategy extends BaseStrategy {
     }
 
     @Override
-    protected Duration getExecutionInterval(String symbol) {
-        PositionInfo position = tradingState.getPosition(symbol);
-        return hasPosition(position) ? POSITION_INTERVAL : NO_POSITION_INTERVAL;
+    public boolean shouldExecute(String symbol) {
+        Instant last = lastExecuteTimes.get(symbol);
+        if (last == null) return true;
+        Duration interval = hasPosition(tradingState.getPosition(symbol)) ? POSITION_INTERVAL : NO_POSITION_INTERVAL;
+        return Duration.between(last, Instant.now()).compareTo(interval) >= 0;
     }
 
     @Override
     public TradingSignal execute(String symbol) {
         IndicatorResult result = analyze(symbol);
-        if (result.getSignal() == IndicatorSignal.UP) {
-            return TradingSignal.LONG;
-        }
-        if (result.getSignal() == IndicatorSignal.DOWN) {
-            return TradingSignal.SHORT;
-        }
+        lastExecuteTimes.put(symbol, Instant.now());
+        if (result.getSignal() == IndicatorSignal.UP) return TradingSignal.LONG;
+        if (result.getSignal() == IndicatorSignal.DOWN) return TradingSignal.SHORT;
         return TradingSignal.WAIT;
     }
 
     @Override
     public TradingDecision decide(String symbol) {
         IndicatorResult result = analyze(symbol);
+        lastExecuteTimes.put(symbol, Instant.now());
         PositionInfo position = tradingState.getPosition(symbol);
         IndicatorAction action = resolveAction(result, position);
         BinancePriceTicker priceTicker = marketService.getPrice(symbol);
@@ -113,54 +101,23 @@ public class AiStrategy extends BaseStrategy {
                 .build();
     }
 
-    /** AI 自己决定金额、限价、止盈、止损；BinanceTradeService 负责统一交易规则修正。 */
     @Override
-    protected OrderInfo createEntryOrder(TradingDecision decision) {
-        String symbol = decision.getSymbol();
-        if (decision.getDirection() == null) {
-            throw new IllegalArgumentException("AI 交易决策缺少方向: symbol=" + symbol);
-        }
-        if (decision.getEntryPrice() == null || decision.getEntryPrice().compareTo(BigDecimal.ZERO) <= 0) {
-            throw new IllegalArgumentException("AI 未返回有效限价: symbol=" + symbol);
-        }
-        if (decision.getUsdtAmount() == null || decision.getUsdtAmount().compareTo(BigDecimal.ZERO) <= 0) {
-            throw new IllegalArgumentException("AI 未返回有效下单金额: symbol=" + symbol);
-        }
-
-        Side side = decision.getDirection() == TradingDecision.Direction.LONG ? Side.BUY : Side.SELL;
-        BigDecimal price = decision.getEntryPrice();
-        BigDecimal usdtAmount = decision.getUsdtAmount();
-        BigDecimal quantity = usdtAmount.divide(price, 20, java.math.RoundingMode.DOWN);
-
-        log.info("AI执行限价单: symbol={}, side={}, amount={}, price={}, quantity={}, tp={}, sl={}",
-                symbol, side, usdtAmount, price, quantity,
-                decision.getTakeProfitPrice(), decision.getStopLossPrice());
-
-        if (decision.getTakeProfitPrice() != null && decision.getStopLossPrice() != null) {
-            return tradeService.createLimitOrderAndTPSLForPrice(
-                    symbol,
-                    side,
-                    TimeInForce.GTC,
-                    quantity,
-                    price,
-                    decision.getTakeProfitPrice(),
-                    decision.getStopLossPrice());
-        }
-
-        return tradeService.createLimitOrder(
-                symbol,
-                side,
-                TimeInForce.GTC,
-                usdtAmount,
-                price);
+    public TradingDecision onProtectionTrigger(String symbol,
+                                                TradingDecision.Direction direction,
+                                                BigDecimal quantity,
+                                                BigDecimal takeProfitPrice,
+                                                BigDecimal stopLossPrice) {
+        return TradingDecision.builder()
+                .symbol(symbol)
+                .direction(direction)
+                .decision(TradingDecision.DecisionType.EXIT)
+                .reason("AiStrategy：保护单无法创建且价格已越过保护价，立即退出")
+                .build();
     }
 
     private IndicatorResult analyze(String symbol) {
         IndicatorResult result = deepSeek.calculateWithContext(symbol, buildStrategyContext(symbol));
-        if (result == null) {
-            throw new IllegalStateException("DeepSeek 未返回 IndicatorResult: symbol=" + symbol);
-        }
-
+        if (result == null) throw new IllegalStateException("DeepSeek 未返回 IndicatorResult: symbol=" + symbol);
         log.info("AI策略分析完成: symbol={}, action={}, signal={}, confidence={}, reason={}",
                 symbol, result.getAction(), result.getSignal(), result.getConfidence(), result.getReason());
         return result;
@@ -171,7 +128,6 @@ public class AiStrategy extends BaseStrategy {
         AccountInfo account = tradingState.getAccountInfo();
         PositionInfo position = tradingState.getPosition(symbol);
         List<OrderInfo> openOrders = tradingState.getOpenOrders(symbol);
-
         context.put("account", account);
         context.put("position", position);
         context.put("openOrders", openOrders);
@@ -181,34 +137,24 @@ public class AiStrategy extends BaseStrategy {
     }
 
     private IndicatorAction resolveAction(IndicatorResult result, PositionInfo position) {
-        if (result.getAction() != null) {
-            return result.getAction();
-        }
+        if (result.getAction() != null) return result.getAction();
         if (!hasPosition(position)) {
-            return result.getSignal() == IndicatorSignal.NEUTRAL
-                    ? IndicatorAction.WAIT : IndicatorAction.OPEN;
+            return result.getSignal() == IndicatorSignal.NEUTRAL ? IndicatorAction.WAIT : IndicatorAction.OPEN;
         }
         return IndicatorAction.HOLD;
     }
 
     private TradingDecision.Direction resolveDirection(IndicatorResult result, PositionInfo position) {
-        if (result.getSignal() == IndicatorSignal.UP) {
-            return TradingDecision.Direction.LONG;
-        }
-        if (result.getSignal() == IndicatorSignal.DOWN) {
-            return TradingDecision.Direction.SHORT;
-        }
-        if (hasPosition(position)) {
-            return position.isLong() ? TradingDecision.Direction.LONG : TradingDecision.Direction.SHORT;
-        }
+        if (result.getSignal() == IndicatorSignal.UP) return TradingDecision.Direction.LONG;
+        if (result.getSignal() == IndicatorSignal.DOWN) return TradingDecision.Direction.SHORT;
+        if (hasPosition(position)) return position.isLong() ? TradingDecision.Direction.LONG : TradingDecision.Direction.SHORT;
         return null;
     }
 
     private TradingDecision.DecisionType toDecisionType(IndicatorAction action, IndicatorResult result) {
         return switch (action) {
             case OPEN -> result.getSignal() == IndicatorSignal.DOWN
-                    ? TradingDecision.DecisionType.ENTER_SHORT
-                    : TradingDecision.DecisionType.ENTER_LONG;
+                    ? TradingDecision.DecisionType.ENTER_SHORT : TradingDecision.DecisionType.ENTER_LONG;
             case HOLD -> TradingDecision.DecisionType.HOLD;
             case CLOSE -> TradingDecision.DecisionType.EXIT;
             case WAIT -> TradingDecision.DecisionType.WAIT;
