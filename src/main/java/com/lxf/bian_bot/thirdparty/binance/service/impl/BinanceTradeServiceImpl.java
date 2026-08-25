@@ -54,7 +54,12 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
         if (response.getData() == null || response.getData().isEmpty()) {
             return PositionInfo.builder().symbol(symbol).build();
         }
-        return toPositionInfo(response.getData().getFirst());
+        return response.getData().stream()
+                .map(this::toPositionInfo)
+                .filter(position -> position.getPositionAmt() != null
+                        && position.getPositionAmt().compareTo(BigDecimal.ZERO) != 0)
+                .findFirst()
+                .orElseGet(() -> toPositionInfo(response.getData().getFirst()));
     }
 
     @Override
@@ -103,21 +108,24 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
         BigDecimal normalizedSl = orderParameterCalculator.normalizeTriggerPrice(
                 symbol, stopLossPrice, openSide, false);
         Side closeSide = openSide == Side.BUY ? Side.SELL : Side.BUY;
+        String positionSide = resolvePositionSide(symbol, openSide);
 
         log.info("========== 创建策略保护单 ==========");
         log.info("交易对：{}", symbol);
         log.info("开仓方向：{}", openSide);
         log.info("平仓方向：{}", closeSide);
+        log.info("持仓模式 positionSide：{}", positionSide);
         log.info("保护数量：{}", normalizedQuantity);
         log.info("止盈价格：{}", normalizedTp);
         log.info("止损价格：{}", normalizedSl);
 
-        createProtectionAlgoOrder(symbol, closeSide, OrderType.STOP_MARKET, normalizedSl, "SL");
-        createProtectionAlgoOrder(symbol, closeSide, OrderType.TAKE_PROFIT_MARKET, normalizedTp, "TP");
+        createProtectionAlgoOrder(symbol, closeSide, positionSide, OrderType.STOP_MARKET, normalizedSl, "SL");
+        createProtectionAlgoOrder(symbol, closeSide, positionSide, OrderType.TAKE_PROFIT_MARKET, normalizedTp, "TP");
     }
 
     private void createProtectionAlgoOrder(String symbol,
                                            Side side,
+                                           String positionSide,
                                            OrderType type,
                                            BigDecimal triggerPrice,
                                            String name) {
@@ -125,6 +133,7 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
         request.setAlgoType("CONDITIONAL");
         request.setSymbol(symbol);
         request.setSide(side);
+        request.setPositionSide(positionSide);
         request.setType(type.name());
         request.setTriggerPrice(triggerPrice.doubleValue());
         request.setClosePosition("TRUE");
@@ -137,9 +146,9 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
                         + ", triggerPrice=" + triggerPrice);
             }
             NewAlgoOrderResponse data = response.getData();
-            log.info("{} 保护单创建成功: symbol={}, algoId={}, type={}, side={}, triggerPrice={}, status={}",
+            log.info("{} 保护单创建成功: symbol={}, algoId={}, type={}, side={}, positionSide={}, triggerPrice={}, status={}",
                     name, symbol, data.getAlgoId(), data.getOrderType(), data.getSide(),
-                    data.getTriggerPrice(), data.getAlgoStatus());
+                    positionSide, data.getTriggerPrice(), data.getAlgoStatus());
         } catch (ApiException e) {
             throw e;
         }
@@ -151,12 +160,16 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
         log.info("交易对：{}", symbol);
         log.info("方向：{}", side);
         log.info("实际数量：{}", quantity);
+
+        String positionSide = resolvePositionSide(symbol, side);
+        log.info("持仓模式 positionSide：{}", positionSide);
         log.info("==============================");
 
         NewOrderRequest request = new NewOrderRequest();
         request.type(OrderType.MARKET.name());
         request.symbol(symbol);
         request.side(side);
+        request.setPositionSide(positionSide);
         request.setQuantity(quantity.doubleValue());
         return newOrder(request, "下单失败！");
     }
@@ -173,12 +186,15 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
         log.info("修正后单价：{}", price);
         log.info("生效时间：{}", timeInForce.name());
         log.info("修正后数量：{}", quantity);
-        log.info("==============================");
+
+        String positionSide = resolvePositionSide(symbol, side);
+        log.info("持仓模式 positionSide：{}", positionSide);
 
         NewOrderRequest request = new NewOrderRequest();
         request.type(OrderType.LIMIT.name());
         request.symbol(symbol);
         request.side(side);
+        request.setPositionSide(positionSide);
         request.setTimeInForce(
                 com.binance.connector.client.derivatives_trading_usds_futures.rest.model.TimeInForce
                         .valueOf(timeInForce.name()));
@@ -199,15 +215,41 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
         Side closeSide = positionAmt.compareTo(BigDecimal.ZERO) > 0 ? Side.SELL : Side.BUY;
         BigDecimal quantity = orderParameterCalculator.normalizeMarketQuantity(
                 symbol, positionAmt.abs(), BigDecimal.ZERO);
+        String positionSide = resolvePositionSide(symbol, closeSide);
 
         NewOrderRequest request = new NewOrderRequest();
         request.setSymbol(symbol);
         request.setSide(closeSide);
         request.setType(OrderType.MARKET.name());
+        request.setPositionSide(positionSide);
         request.setQuantity(quantity.doubleValue());
         request.setReduceOnly("true");
         request.setNewOrderRespType(NewOrderRespType.RESULT);
+        log.info("市价平仓: symbol={}, side={}, positionSide={}, quantity={}",
+                symbol, closeSide, positionSide, quantity);
         return newOrder(request, "市价平仓失败！");
+    }
+
+    /**
+     * 根据 Binance 当前持仓返回正确的 positionSide。
+     *
+     * 单向持仓：BOTH
+     * 双向持仓：BUY -> LONG，SELL -> SHORT
+     */
+    private String resolvePositionSide(String symbol, Side orderSide) {
+        ApiResponse<PositionInformationV2Response> response = api.positionInformationV2(symbol, null);
+        if (response.getData() == null || response.getData().isEmpty()) {
+            return orderSide == Side.BUY ? "LONG" : "SHORT";
+        }
+
+        boolean hedgeMode = response.getData().stream()
+                .map(PositionInformationV2ResponseInner::getPositionSide)
+                .anyMatch(side -> "LONG".equalsIgnoreCase(side) || "SHORT".equalsIgnoreCase(side));
+
+        if (!hedgeMode) {
+            return "BOTH";
+        }
+        return orderSide == Side.BUY ? "LONG" : "SHORT";
     }
 
     private PositionInfo toPositionInfo(PositionInformationV2ResponseInner data) {
