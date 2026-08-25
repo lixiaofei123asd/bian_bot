@@ -207,7 +207,34 @@ public class StrategyExecutionService {
 
             tradingState.updateOrder(orderInfo);
             BigDecimal executedQty = orderInfo.getExecutedQty();
-            boolean filled = executedQty != null && executedQty.compareTo(BigDecimal.ZERO) > 0;
+            BigDecimal avgPrice = orderInfo.getAvgPrice();
+            boolean filled = executedQty != null
+                    && executedQty.compareTo(BigDecimal.ZERO) > 0
+                    && avgPrice != null
+                    && avgPrice.compareTo(BigDecimal.ZERO) > 0;
+
+            /*
+             * 市价单通常会在 REST newOrder 响应中直接返回 FILLED。
+             * User Data Stream 是最终成交事实来源，但不能假设它一定先于 REST 响应到达。
+             * 因此这里在 REST 响应已经确认成交时同步发布同一个 OrderFilledEvent。
+             * StrategyProtectionHandler 自带 orderId 去重，所以即使随后 User Data Stream
+             * 再发布一次，也只会执行一次 TP/SL。
+             */
+            if (filled) {
+                Side openSide = TradingDecision.DecisionType.ENTER_LONG.equals(decision.getDecision())
+                        ? Side.BUY : Side.SELL;
+
+                log.info("REST 开仓响应已确认成交，发布 OrderFilledEvent: symbol={}, orderId={}, side={}, quantity={}, entryPrice={}",
+                        symbol, orderInfo.getOrderId(), openSide, executedQty, avgPrice);
+
+                eventPublisher.publishEvent(new OrderFilledEvent(
+                        symbol,
+                        orderInfo.getOrderId(),
+                        openSide,
+                        executedQty,
+                        avgPrice));
+            }
+
             tradingState.updateExecutionState(symbol,
                     filled ? TradingExecutionState.POSITION_OPEN : TradingExecutionState.ORDER_OPEN);
         } finally {
