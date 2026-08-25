@@ -12,6 +12,7 @@ import com.lxf.bian_bot.thirdparty.binance.enums.TradingMarginType;
 import com.lxf.bian_bot.thirdparty.binance.model.OrderInfo;
 import com.lxf.bian_bot.thirdparty.binance.model.PositionInfo;
 import com.lxf.bian_bot.thirdparty.binance.service.BinanceTradeService;
+import com.lxf.bian_bot.trading.order.OrderParameterCalculator;
 import com.lxf.bian_bot.trading.state.TradingExecutionState;
 import com.lxf.bian_bot.trading.state.TradingState;
 import java.math.BigDecimal;
@@ -23,7 +24,7 @@ import org.springframework.stereotype.Service;
  * 策略通用交易执行器。
  *
  * <p>本类不做任何交易决策：不决定方向、不决定 TP/SL、不决定撤单时间。
- * 它只负责把 Strategy 已经产生的 TradingDecision 执行到 Binance。</p>
+ * 保证金来自 TradingConfig；本类根据实际杠杆和入场价格计算仓位名义价值及最终数量。</p>
  */
 @Slf4j
 @Service
@@ -36,6 +37,7 @@ public class StrategyExecutionService {
     private final TradingConfig tradingConfig;
     private final SymbolRuleCache symbolRuleCache;
     private final TickerCache tickerCache;
+    private final OrderParameterCalculator orderParameterCalculator;
     private final ApplicationEventPublisher eventPublisher;
 
     public StrategyExecutionService(BinanceTradeService tradeService,
@@ -43,12 +45,14 @@ public class StrategyExecutionService {
                                      TradingConfig tradingConfig,
                                      SymbolRuleCache symbolRuleCache,
                                      TickerCache tickerCache,
+                                     OrderParameterCalculator orderParameterCalculator,
                                      ApplicationEventPublisher eventPublisher) {
         this.tradeService = tradeService;
         this.tradingState = tradingState;
         this.tradingConfig = tradingConfig;
         this.symbolRuleCache = symbolRuleCache;
         this.tickerCache = tickerCache;
+        this.orderParameterCalculator = orderParameterCalculator;
         this.eventPublisher = eventPublisher;
     }
 
@@ -83,10 +87,7 @@ public class StrategyExecutionService {
         }
     }
 
-    /**
-     * 执行 Strategy 已经计算好的 TP/SL。
-     * 这里只调用 Binance，不计算任何保护价格。
-     */
+    /** 执行 Strategy 已经计算好的 TP/SL；这里只调用 Binance，不计算保护价格。 */
     public void executeProtection(String symbol,
                                   Side openSide,
                                   BigDecimal quantity,
@@ -120,7 +121,6 @@ public class StrategyExecutionService {
         }
     }
 
-    /** 执行策略决定的开仓动作。 */
     private void executeEntry(TradingDecision decision) {
         String symbol = decision.getSymbol();
 
@@ -187,6 +187,13 @@ public class StrategyExecutionService {
         tradeService.closeMarketOrder(symbol);
     }
 
+    /**
+     * 根据交易配置的保证金和实际杠杆计算最终数量。
+     *
+     * <p>positionNotional = marginAmount × leverage</p>
+     * <p>quantity = positionNotional ÷ entryPrice</p>
+     * <p>随后由 OrderParameterCalculator 按 Binance 交易规则修正数量。</p>
+     */
     private OrderInfo createEntryOrder(TradingDecision decision) {
         String symbol = decision.getSymbol();
         Side side = TradingDecision.DecisionType.ENTER_LONG.equals(decision.getDecision())
@@ -197,23 +204,33 @@ public class StrategyExecutionService {
             price = getLimitOrderPrice(symbol, side);
         }
 
-        BigDecimal marginAmount = decision.getMarginAmount();
-        if (marginAmount == null || marginAmount.compareTo(BigDecimal.ZERO) <= 0) {
-            marginAmount = tradingConfig.getMarginAmount();
-        }
+        BigDecimal marginAmount = tradingConfig.getMarginAmount();
         if (marginAmount == null || marginAmount.compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalArgumentException("保证金金额必须大于 0: symbol=" + symbol + ", marginAmount=" + marginAmount);
         }
 
-        BigDecimal positionNotional = marginAmount.multiply(BigDecimal.valueOf(getEffectiveLeverage(symbol)));
+        long leverage = getEffectiveLeverage(symbol);
+        BigDecimal positionNotional = marginAmount.multiply(BigDecimal.valueOf(leverage));
+        BigDecimal quantity;
 
         if ("MARKET".equalsIgnoreCase(tradingConfig.getOrderType())) {
-            return tradeService.createMarketOrder(symbol, side, positionNotional);
+            BigDecimal marketPrice = getMarketOrderPrice(symbol, side);
+            quantity = orderParameterCalculator.calculateMarketQuantity(symbol, positionNotional, marketPrice);
+            log.info("开仓数量计算: symbol={}, marginAmount={}, leverage={}, positionNotional={}, price={}, quantity={}",
+                    symbol, marginAmount, leverage, positionNotional, marketPrice, quantity);
+            return tradeService.createMarketOrder(symbol, side, quantity);
         }
+
         if (!"LIMIT".equalsIgnoreCase(tradingConfig.getOrderType())) {
             throw new IllegalArgumentException("不支持的下单模式: " + tradingConfig.getOrderType());
         }
-        return tradeService.createLimitOrder(symbol, side, TimeInForce.GTC, positionNotional, price);
+
+        BigDecimal normalizedPrice = orderParameterCalculator.normalizeEntryPrice(
+                symbol, price, Side.BUY.equals(side));
+        quantity = orderParameterCalculator.calculateLimitQuantity(symbol, positionNotional, normalizedPrice);
+        log.info("开仓数量计算: symbol={}, marginAmount={}, leverage={}, positionNotional={}, price={}, quantity={}",
+                symbol, marginAmount, leverage, positionNotional, normalizedPrice, quantity);
+        return tradeService.createLimitOrder(symbol, side, TimeInForce.GTC, quantity, normalizedPrice);
     }
 
     private long getEffectiveLeverage(String symbol) {
@@ -248,6 +265,18 @@ public class StrategyExecutionService {
         BigDecimal price = Side.BUY.equals(side) ? ticker.getAskPrice() : ticker.getBidPrice();
         if (price == null || price.compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalStateException("WebSocket 最新价格无效: symbol=" + symbol + ", price=" + price);
+        }
+        return price;
+    }
+
+    private BigDecimal getMarketOrderPrice(String symbol, Side side) {
+        var ticker = tickerCache.get(symbol);
+        if (ticker == null) {
+            throw new IllegalStateException("WebSocket 尚未收到最新 BookTicker: symbol=" + symbol);
+        }
+        BigDecimal price = Side.BUY.equals(side) ? ticker.getAskPrice() : ticker.getBidPrice();
+        if (price == null || price.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalStateException("WebSocket 最新盘口价格无效: symbol=" + symbol + ", price=" + price);
         }
         return price;
     }
