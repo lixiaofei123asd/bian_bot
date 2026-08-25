@@ -23,12 +23,12 @@ public interface BinanceTradeService {
 
     LeverageInfo setLeverage(String symbol, Long leverage);
 
-    /** positionNotional 是仓位名义价值，不是保证金。 */
-    OrderInfo createMarketOrder(String symbol, Side side, BigDecimal positionNotional);
+    /** quantity 是已经按照交易规则计算、修正后的最终下单数量。 */
+    OrderInfo createMarketOrder(String symbol, Side side, BigDecimal quantity);
 
-    /** positionNotional 是仓位名义价值，不是保证金。 */
+    /** quantity 是已经按照交易规则计算、修正后的最终下单数量。 */
     OrderInfo createLimitOrder(String symbol, Side side, TimeInForce timeInForce,
-                               BigDecimal positionNotional, BigDecimal price);
+                               BigDecimal quantity, BigDecimal price);
 
     /** 创建策略已经计算好的 TP/SL；本方法不计算保护价格。 */
     void createProtectionOrders(String symbol, Side openSide, BigDecimal quantity,
