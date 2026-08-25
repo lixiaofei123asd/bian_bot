@@ -6,8 +6,11 @@ import com.lxf.bian_bot.analysis.enums.IndicatorSignal;
 import com.lxf.bian_bot.analysis.enums.TradingSignal;
 import com.lxf.bian_bot.analysis.indicator.IndicatorSecondKlineTrend;
 import com.lxf.bian_bot.analysis.model.IndicatorResult;
+import com.lxf.bian_bot.analysis.model.ProtectionConfig;
+import com.lxf.bian_bot.config.trading.TradingConfig;
 import com.lxf.bian_bot.model.TradingDecision;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -21,10 +24,12 @@ public class Strategy1 implements Strategy {
     private static final Duration EXECUTION_INTERVAL = Duration.ofSeconds(10);
 
     private final IndicatorSecondKlineTrend trend;
+    private final TradingConfig tradingConfig;
     private final ConcurrentMap<String, Instant> lastExecuteTimes = new ConcurrentHashMap<>();
 
-    public Strategy1(IndicatorSecondKlineTrend trend) {
+    public Strategy1(IndicatorSecondKlineTrend trend, TradingConfig tradingConfig) {
         this.trend = trend;
+        this.tradingConfig = tradingConfig;
     }
 
     @Override
@@ -63,6 +68,38 @@ public class Strategy1 implements Strategy {
         if (upCount >= getRequiredMatchCount()) return TradingSignal.LONG;
         if (downCount >= getRequiredMatchCount()) return TradingSignal.SHORT;
         return TradingSignal.WAIT;
+    }
+
+    /**
+     * Strategy1 自己决定保护方式：按配置的盈利/亏损金额反推价格。
+     * 这里的 TP/SL 计算属于策略逻辑，不再属于 PendingOrderProtectionService。
+     */
+    @Override
+    public ProtectionConfig calculateProtection(String symbol,
+                                                TradingDecision.Direction direction,
+                                                BigDecimal quantity,
+                                                BigDecimal entryPrice) {
+        if (!tradingConfig.isTakeProfitStopLossEnabled()) return ProtectionConfig.disabled();
+        if (quantity == null || quantity.compareTo(BigDecimal.ZERO) <= 0) return ProtectionConfig.disabled();
+        if (entryPrice == null || entryPrice.compareTo(BigDecimal.ZERO) <= 0) return ProtectionConfig.disabled();
+
+        BigDecimal tpAmount = tradingConfig.getTakeProfitAmount();
+        BigDecimal slAmount = tradingConfig.getStopLossAmount();
+        if (tpAmount == null || tpAmount.compareTo(BigDecimal.ZERO) <= 0
+                || slAmount == null || slAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            return ProtectionConfig.disabled();
+        }
+
+        BigDecimal tpMove = tpAmount.divide(quantity, 20, RoundingMode.HALF_UP);
+        BigDecimal slMove = slAmount.divide(quantity, 20, RoundingMode.HALF_UP);
+
+        if (direction == TradingDecision.Direction.LONG) {
+            return ProtectionConfig.of(entryPrice.add(tpMove), entryPrice.subtract(slMove));
+        }
+        if (direction == TradingDecision.Direction.SHORT) {
+            return ProtectionConfig.of(entryPrice.subtract(tpMove), entryPrice.add(slMove));
+        }
+        return ProtectionConfig.disabled();
     }
 
     @Override
