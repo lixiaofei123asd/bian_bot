@@ -7,9 +7,15 @@ import com.lxf.bian_bot.thirdparty.binance.service.BinanceTradeService;
 import com.lxf.bian_bot.trading.state.TradingState;
 import java.math.BigDecimal;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
-/** 保护单异常事件处理器：由 Strategy 决定是否退出，由交易服务执行退出。 */
+/**
+ * 保护单异常事件处理器：由 Strategy 决定是否退出，由交易服务执行退出。
+ *
+ * <p>通过 Spring 事件接收保护触发事件，避免与 PendingOrderProtectionService
+ * 形成构造器循环依赖。</p>
+ */
 @Slf4j
 @Service
 public class StrategyProtectionHandler {
@@ -29,8 +35,14 @@ public class StrategyProtectionHandler {
         this.tradingState = tradingState;
     }
 
-    public void handle(String symbol, Side openSide,
-                       BigDecimal quantity, BigDecimal takeProfitPrice, BigDecimal stopLossPrice) {
+    @EventListener
+    public void handle(ProtectionTriggerEvent event) {
+        String symbol = event.symbol();
+        Side openSide = event.openSide();
+        BigDecimal quantity = event.quantity();
+        BigDecimal takeProfitPrice = event.takeProfitPrice();
+        BigDecimal stopLossPrice = event.stopLossPrice();
+
         String strategyName = strategyConfig.getStrategyName(symbol);
         Strategy strategy = strategyRegistry.getStrategy(strategyName);
         if (strategy == null) {
@@ -40,7 +52,8 @@ public class StrategyProtectionHandler {
 
         TradingDecision.Direction direction = openSide == Side.BUY
                 ? TradingDecision.Direction.LONG : TradingDecision.Direction.SHORT;
-        TradingDecision decision = strategy.onProtectionTrigger(symbol, direction, quantity, takeProfitPrice, stopLossPrice);
+        TradingDecision decision = strategy.onProtectionTrigger(
+                symbol, direction, quantity, takeProfitPrice, stopLossPrice);
         if (decision == null || decision.getDecision() == null) {
             log.warn("Strategy 未返回保护触发决策: strategy={}, symbol={}", strategyName, symbol);
             return;
