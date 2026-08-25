@@ -39,16 +39,15 @@ public class StrategyExecutionService {
     private final StrategyConfig strategyConfig;
     private final ApplicationEventPublisher eventPublisher;
 
-    public StrategyExecutionService(
-            BinanceTradeService tradeService,
-            TradingState tradingState,
-            TradingConfig tradingConfig,
-            SymbolRuleCache symbolRuleCache,
-            TickerCache tickerCache,
-            PendingOrderProtectionService pendingOrderProtectionService,
-            StrategyRegistry strategyRegistry,
-            StrategyConfig strategyConfig,
-            ApplicationEventPublisher eventPublisher) {
+    public StrategyExecutionService(BinanceTradeService tradeService,
+                                     TradingState tradingState,
+                                     TradingConfig tradingConfig,
+                                     SymbolRuleCache symbolRuleCache,
+                                     TickerCache tickerCache,
+                                     PendingOrderProtectionService pendingOrderProtectionService,
+                                     StrategyRegistry strategyRegistry,
+                                     StrategyConfig strategyConfig,
+                                     ApplicationEventPublisher eventPublisher) {
         this.tradeService = tradeService;
         this.tradingState = tradingState;
         this.tradingConfig = tradingConfig;
@@ -112,20 +111,22 @@ public class StrategyExecutionService {
                         executedQty != null && executedQty.compareTo(BigDecimal.ZERO) > 0
                                 ? TradingExecutionState.POSITION_OPEN : TradingExecutionState.ORDER_OPEN);
 
+                Side openSide = TradingDecision.DecisionType.ENTER_LONG.equals(decision.getDecision()) ? Side.BUY : Side.SELL;
+
+                // 限价开仓未成交：只登记待成交订单，PendingOrderProtectionService 不参与 TP/SL 决策。
+                if ("LIMIT".equalsIgnoreCase(tradingConfig.getOrderType())
+                        && (executedQty == null || executedQty.compareTo(BigDecimal.ZERO) <= 0)) {
+                    pendingOrderProtectionService.register(symbol, orderInfo.getOrderId(), openSide);
+                }
+
                 // 市价单通常立即成交；统一发布成交事件，由对应 Strategy 决定 TP/SL。
                 if ("MARKET".equalsIgnoreCase(tradingConfig.getOrderType())
                         && executedQty != null && executedQty.compareTo(BigDecimal.ZERO) > 0) {
                     BigDecimal entryPrice = orderInfo.getAvgPrice();
-                    if (entryPrice == null || entryPrice.compareTo(BigDecimal.ZERO) <= 0) {
-                        entryPrice = orderInfo.getPrice();
-                    }
+                    if (entryPrice == null || entryPrice.compareTo(BigDecimal.ZERO) <= 0) entryPrice = orderInfo.getPrice();
                     if (entryPrice != null && entryPrice.compareTo(BigDecimal.ZERO) > 0) {
                         eventPublisher.publishEvent(new OrderFilledEvent(
-                                symbol,
-                                orderInfo.getOrderId(),
-                                TradingDecision.DecisionType.ENTER_LONG.equals(decision.getDecision()) ? Side.BUY : Side.SELL,
-                                executedQty,
-                                entryPrice));
+                                symbol, orderInfo.getOrderId(), openSide, executedQty, entryPrice));
                     }
                 }
             } finally {
@@ -138,9 +139,6 @@ public class StrategyExecutionService {
         }
     }
 
-    /**
-     * 保护单无法创建且价格已经越过触发价时，由具体 Strategy 决定是否退出。
-     */
     public void handleProtectionTrigger(String symbol, TradingDecision.Direction direction,
                                         BigDecimal quantity, BigDecimal takeProfitPrice, BigDecimal stopLossPrice) {
         String strategyName = strategyConfig.getStrategyName(symbol);
@@ -158,10 +156,7 @@ public class StrategyExecutionService {
         execute(decision);
     }
 
-    /**
-     * 执行 Strategy 已经决定好的 TP/SL。
-     * 本方法只负责执行，不参与价格/金额计算。
-     */
+    /** 执行 Strategy 已经决定好的 TP/SL；本方法不参与保护价格计算。 */
     public void executeProtection(String symbol,
                                   Side openSide,
                                   BigDecimal quantity,
@@ -179,11 +174,8 @@ public class StrategyExecutionService {
         } catch (ApiException e) {
             if (e.getMessage() != null && e.getMessage().contains(IMMEDIATE_TRIGGER_CODE)) {
                 eventPublisher.publishEvent(new ProtectionTriggerEvent(
-                        symbol,
-                        openSide,
-                        quantity,
-                        protectionConfig.takeProfitPrice(),
-                        protectionConfig.stopLossPrice()));
+                        symbol, openSide, quantity,
+                        protectionConfig.takeProfitPrice(), protectionConfig.stopLossPrice()));
                 return;
             }
             throw e;
@@ -207,8 +199,6 @@ public class StrategyExecutionService {
         if (!"LIMIT".equalsIgnoreCase(tradingConfig.getOrderType())) {
             throw new IllegalArgumentException("不支持的下单模式: " + tradingConfig.getOrderType());
         }
-
-        BigDecimal quantity = positionNotional.divide(price, 20, RoundingMode.DOWN);
         return tradeService.createLimitOrder(symbol, side, TimeInForce.GTC, positionNotional, price);
     }
 
