@@ -11,8 +11,8 @@ public class TradingProperties {
     /** 是否允许策略信号真正发送订单。 */
     private boolean enabled;
 
-    /** 每次开仓使用的 USDT 金额。 */
-    private BigDecimal usdtAmount = new BigDecimal("10.0");
+    /** 每次开仓使用的保证金金额（USDT）。实际仓位价值 = 保证金 × 杠杆。 */
+    private BigDecimal marginAmount = new BigDecimal("10.0");
 
     /** 下单模式：LIMIT=限价单，MARKET=市价单。 */
     private String orderType = "LIMIT";
