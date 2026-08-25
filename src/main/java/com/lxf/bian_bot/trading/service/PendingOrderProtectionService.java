@@ -8,7 +8,7 @@ import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.NewOrderRespType;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.QueryOrderResponse;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.Side;
-import com.lxf.bian_bot.analysis.StrategyProtectionHandler;
+import com.lxf.bian_bot.analysis.ProtectionTriggerEvent;
 import com.lxf.bian_bot.thirdparty.binance.enums.OrderType;
 import com.lxf.bian_bot.trading.order.OrderParameterCalculator;
 import com.lxf.bian_bot.trading.state.TradingState;
@@ -17,6 +17,7 @@ import java.math.RoundingMode;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -33,17 +34,17 @@ public class PendingOrderProtectionService {
     private final DerivativesTradingUsdsFuturesRestApi api;
     private final OrderParameterCalculator orderParameterCalculator;
     private final TradingState tradingState;
-    private final StrategyProtectionHandler strategyProtectionHandler;
+    private final ApplicationEventPublisher eventPublisher;
     private final Map<Long, PendingProtection> pendingOrders = new ConcurrentHashMap<>();
 
     public PendingOrderProtectionService(DerivativesTradingUsdsFuturesRestApi api,
                                          OrderParameterCalculator orderParameterCalculator,
                                          TradingState tradingState,
-                                         StrategyProtectionHandler strategyProtectionHandler) {
+                                         ApplicationEventPublisher eventPublisher) {
         this.api = api;
         this.orderParameterCalculator = orderParameterCalculator;
         this.tradingState = tradingState;
-        this.strategyProtectionHandler = strategyProtectionHandler;
+        this.eventPublisher = eventPublisher;
     }
 
     public void register(String symbol, long orderId, Side side,
@@ -190,7 +191,10 @@ public class PendingOrderProtectionService {
             }
         } catch (ApiException e) {
             if (isImmediateTriggerException(e)) {
-                strategyProtectionHandler.handle(symbol, openSide, quantity, tp, sl);
+                log.warn("保护单创建返回 -2021：价格已经越过保护触发价，发布 ProtectionTriggerEvent，由策略决定是否平仓: symbol={}, orderId={}, side={}, quantity={}, tp={}, sl={}",
+                        symbol, pending.orderId, openSide, quantity, tp, sl);
+                eventPublisher.publishEvent(new ProtectionTriggerEvent(
+                        symbol, openSide, quantity, tp, sl));
                 pendingOrders.remove(pending.orderId);
                 tradingState.removeOrder(pending.orderId);
                 tradingState.refreshExecutionState(symbol);
