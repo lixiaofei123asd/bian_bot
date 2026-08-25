@@ -27,6 +27,11 @@ public interface BinanceTradeService {
     /** 创建限价开仓单；positionNotional 表示仓位名义价值，不是保证金。 */
     OrderInfo createLimitOrder(String symbol, Side side, TimeInForce timeInForce, BigDecimal positionNotional, BigDecimal price);
 
+    /** 创建已经成交仓位的 TP/SL 保护单；价格由 Strategy 决定，本方法只负责调用 Binance。 */
+    void createProtectionOrders(String symbol, Side openSide, BigDecimal quantity,
+                                BigDecimal takeProfitPrice, BigDecimal stopLossPrice);
+
+    /** 兼容旧的“开仓+保护”接口；新的策略执行流程不再使用。 */
     OrderInfo createLimitOrderAndTPSLForPrice(String symbol, Side side, TimeInForce timeInForce, BigDecimal quantity, BigDecimal price, BigDecimal tp, BigDecimal sl);
 
     OrderInfo createLimitOrderAndTPSLForProfitAndLoss(String symbol, Side side, TimeInForce timeInForce, BigDecimal quantity, BigDecimal price, BigDecimal profitAmount, BigDecimal lossAmount);
