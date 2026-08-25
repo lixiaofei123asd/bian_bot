@@ -37,9 +37,6 @@ public class DeepSeekIndicatorResult {
     /** 建议止损价格。 */
     private BigDecimal stopLossPrice;
 
-    /** 建议使用的 USDT 金额。 */
-    private BigDecimal usdtAmount;
-
     /** 分析原因。 */
     private String reason;
 }
