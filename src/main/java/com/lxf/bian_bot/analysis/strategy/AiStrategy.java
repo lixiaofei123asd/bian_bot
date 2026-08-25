@@ -7,6 +7,8 @@ import com.lxf.bian_bot.analysis.enums.IndicatorSignal;
 import com.lxf.bian_bot.analysis.enums.TradingSignal;
 import com.lxf.bian_bot.analysis.indicator.IndicatorDeepSeek;
 import com.lxf.bian_bot.analysis.model.IndicatorResult;
+import com.lxf.bian_bot.analysis.model.ProtectionConfig;
+import com.lxf.bian_bot.config.trading.TradingConfig;
 import com.lxf.bian_bot.model.TradingDecision;
 import com.lxf.bian_bot.thirdparty.binance.model.AccountInfo;
 import com.lxf.bian_bot.thirdparty.binance.model.BinancePriceTicker;
@@ -35,14 +37,17 @@ public class AiStrategy implements Strategy {
     private final IndicatorDeepSeek deepSeek;
     private final BinanceMarketService marketService;
     private final TradingState tradingState;
+    private final TradingConfig tradingConfig;
     private final ConcurrentMap<String, Instant> lastExecuteTimes = new ConcurrentHashMap<>();
 
     public AiStrategy(IndicatorDeepSeek deepSeek,
                       BinanceMarketService marketService,
-                      TradingState tradingState) {
+                      TradingState tradingState,
+                      TradingConfig tradingConfig) {
         this.deepSeek = deepSeek;
         this.marketService = marketService;
         this.tradingState = tradingState;
+        this.tradingConfig = tradingConfig;
     }
 
     @Override
@@ -99,6 +104,22 @@ public class AiStrategy implements Strategy {
                 .stopLossPrice(result.getStopLossPrice())
                 .reason(result.getReason())
                 .build();
+    }
+
+    /** AI 策略自己决定保护价格；优先使用 AI 分析结果中的 TP/SL。 */
+    @Override
+    public ProtectionConfig calculateProtection(String symbol,
+                                                TradingDecision.Direction direction,
+                                                BigDecimal quantity,
+                                                BigDecimal entryPrice) {
+        if (!tradingConfig.isTakeProfitStopLossEnabled()) return ProtectionConfig.disabled();
+        IndicatorResult result = analyze(symbol);
+        if (result.getTakeProfitPrice() != null && result.getStopLossPrice() != null
+                && result.getTakeProfitPrice().compareTo(BigDecimal.ZERO) > 0
+                && result.getStopLossPrice().compareTo(BigDecimal.ZERO) > 0) {
+            return ProtectionConfig.of(result.getTakeProfitPrice(), result.getStopLossPrice());
+        }
+        return ProtectionConfig.disabled();
     }
 
     @Override
