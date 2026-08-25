@@ -172,7 +172,68 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
         request.side(side);
         request.setPositionSide(positionSide);
         request.setQuantity(quantity.doubleValue());
-        return newOrder(request, "下单失败！");
+
+        OrderInfo orderInfo = newOrder(request, "下单失败！");
+
+        // Binance 市价单的 REST 响应有时会先返回 NEW，随后才通过 User Data Stream 返回 FILLED。
+        // 为避免保护单等待 WebSocket 事件，主动确认当前仓位；确认到真实持仓后立即返回 FILLED 信息。
+        if (!isFilled(orderInfo)) {
+            for (int i = 0; i < 10; i++) {
+                try {
+                    Thread.sleep(100L);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+
+                PositionInfo position = getPositionInfo(symbol);
+                BigDecimal positionAmt = position.getPositionAmt();
+                if (positionAmt == null || positionAmt.compareTo(BigDecimal.ZERO) == 0) {
+                    continue;
+                }
+
+                boolean directionMatched = (side == Side.BUY && positionAmt.compareTo(BigDecimal.ZERO) > 0)
+                        || (side == Side.SELL && positionAmt.compareTo(BigDecimal.ZERO) < 0);
+                if (!directionMatched) {
+                    continue;
+                }
+
+                BigDecimal actualQuantity = positionAmt.abs();
+                BigDecimal actualEntryPrice = position.getEntryPrice();
+                if (actualEntryPrice == null || actualEntryPrice.compareTo(BigDecimal.ZERO) <= 0) {
+                    continue;
+                }
+
+                log.info("市价单已通过 REST 持仓确认成交: symbol={}, side={}, quantity={}, entryPrice={}",
+                        symbol, side, actualQuantity, actualEntryPrice);
+
+                return OrderInfo.builder()
+                        .symbol(orderInfo.getSymbol())
+                        .orderId(orderInfo.getOrderId())
+                        .clientOrderId(orderInfo.getClientOrderId())
+                        .side(orderInfo.getSide())
+                        .type(orderInfo.getType())
+                        .origQty(orderInfo.getOrigQty())
+                        .executedQty(actualQuantity)
+                        .avgPrice(actualEntryPrice)
+                        .price(orderInfo.getPrice())
+                        .status("FILLED")
+                        .reduceOnly(orderInfo.isReduceOnly())
+                        .positionSide(orderInfo.getPositionSide())
+                        .updateTime(System.currentTimeMillis())
+                        .build();
+            }
+        }
+
+        return orderInfo;
+    }
+
+    private boolean isFilled(OrderInfo orderInfo) {
+        return orderInfo != null
+                && orderInfo.getExecutedQty() != null
+                && orderInfo.getExecutedQty().compareTo(BigDecimal.ZERO) > 0
+                && orderInfo.getAvgPrice() != null
+                && orderInfo.getAvgPrice().compareTo(BigDecimal.ZERO) > 0;
     }
 
     @Override
@@ -196,9 +257,7 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
         request.symbol(symbol);
         request.side(side);
         request.setPositionSide(positionSide);
-        request.setTimeInForce(
-                com.binance.connector.client.derivatives_trading_usds_futures.rest.model.TimeInForce
-                        .valueOf(timeInForce.name()));
+        request.setTimeInForce(com.binance.connector.client.derivatives_trading_usds_futures.rest.model.TimeInForce.valueOf(timeInForce.name()));
         request.setQuantity(quantity.doubleValue());
         request.setPrice(price.doubleValue());
         request.setNewOrderRespType(NewOrderRespType.RESULT);
@@ -226,8 +285,7 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
         request.setQuantity(quantity.doubleValue());
         request.setReduceOnly("true");
         request.setNewOrderRespType(NewOrderRespType.RESULT);
-        log.info("市价平仓: symbol={}, side={}, positionSide={}, quantity={}",
-                symbol, closeSide, positionSide, quantity);
+        log.info("市价平仓: symbol={}, side={}, positionSide={}, quantity={}", symbol, closeSide, positionSide, quantity);
         return newOrder(request, "市价平仓失败！");
     }
 
