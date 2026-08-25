@@ -30,13 +30,13 @@ public class TradingDecision {
     /** 计划入场价格 */
     private BigDecimal entryPrice;
 
-    /** 建议使用的 USDT 金额 */
-    private BigDecimal usdtAmount;
+    /** 本次开仓使用的保证金金额，不是仓位名义价值。 */
+    private BigDecimal marginAmount;
 
-    /** 止损价格 */
+    /** 策略计算出的最终止损价格。 */
     private BigDecimal stopLossPrice;
 
-    /** 止盈价格 */
+    /** 策略计算出的最终止盈价格。 */
     private BigDecimal takeProfitPrice;
 
     /** 风险 */
@@ -52,17 +52,11 @@ public class TradingDecision {
     private String reason;
 
     public enum DecisionType {
-        /** 等待 */
         WAIT,
-        /** 开多 */
         ENTER_LONG,
-        /** 开空 */
         ENTER_SHORT,
-        /** 持有当前仓位，不修改交易计划 */
         HOLD,
-        /** 平仓 */
         EXIT,
-        /** 调整当前持仓的止盈止损 */
         ADJUST_PROTECTION
     }
 
