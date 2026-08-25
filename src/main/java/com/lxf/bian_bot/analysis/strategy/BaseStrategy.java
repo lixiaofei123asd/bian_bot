@@ -165,9 +165,10 @@ public abstract class BaseStrategy implements Strategy {
     protected OrderInfo createEntryOrder(TradingDecision decision) {
         String symbol = decision.getSymbol();
         Side side = TradingDecision.DecisionType.ENTER_LONG.equals(decision.getDecision()) ? Side.BUY : Side.SELL;
+        BigDecimal positionNotional = calculatePositionNotional(symbol);
 
         if ("MARKET".equalsIgnoreCase(tradingConfig.getOrderType())) {
-            OrderInfo orderInfo = tradeService.createMarketOrder(symbol, side, tradingConfig.getUsdtAmount());
+            OrderInfo orderInfo = tradeService.createMarketOrder(symbol, side, positionNotional);
             if (tradingConfig.isTakeProfitStopLossEnabled()) {
                 pendingOrderProtectionService.register(symbol, orderInfo.getOrderId(), side,
                         tradingConfig.getTakeProfitAmount(), tradingConfig.getStopLossAmount());
@@ -180,7 +181,7 @@ public abstract class BaseStrategy implements Strategy {
         }
 
         BigDecimal price = getLimitOrderPrice(symbol, side);
-        BigDecimal quantity = tradingConfig.getUsdtAmount().divide(price, 20, java.math.RoundingMode.DOWN);
+        BigDecimal quantity = positionNotional.divide(price, 20, java.math.RoundingMode.DOWN);
 
         if (tradingConfig.isTakeProfitStopLossEnabled()) {
             return tradeService.createLimitOrderAndTPSLForProfitAndLoss(
@@ -189,7 +190,32 @@ public abstract class BaseStrategy implements Strategy {
         }
 
         return tradeService.createLimitOrder(symbol, side, TimeInForce.GTC,
-                tradingConfig.getUsdtAmount(), price);
+                positionNotional, price);
+    }
+
+    /**
+     * 根据保证金金额和实际使用的杠杆计算仓位名义价值。
+     * 例如保证金 5 USDT、20 倍杠杆，则实际下单名义价值为 100 USDT。
+     */
+    protected BigDecimal calculatePositionNotional(String symbol) {
+        BigDecimal marginAmount = tradingConfig.getMarginAmount();
+        if (marginAmount == null || marginAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("保证金金额必须大于 0：" + marginAmount);
+        }
+
+        long leverage = getEffectiveLeverage(symbol);
+        return marginAmount.multiply(BigDecimal.valueOf(leverage));
+    }
+
+    /** 获取本次交易实际使用的杠杆，与 prepareTrading 保持完全一致。 */
+    protected long getEffectiveLeverage(String symbol) {
+        long leverage = tradingConfig.isUseMaxLeverage()
+                ? symbolRuleCache.getMaxLeverage(symbol)
+                : tradingConfig.getLeverage();
+        if (leverage <= 0) {
+            throw new IllegalArgumentException("杠杆必须大于 0：symbol=" + symbol + ", leverage=" + leverage);
+        }
+        return leverage;
     }
 
     protected void prepareTrading(String symbol) {
@@ -208,10 +234,7 @@ public abstract class BaseStrategy implements Strategy {
 
     private void ensureLeverage(String symbol) {
         if (!tradingConfig.isAutoSetLeverage()) return;
-        long leverage = tradingConfig.isUseMaxLeverage()
-                ? symbolRuleCache.getMaxLeverage(symbol)
-                : tradingConfig.getLeverage();
-        tradeService.setLeverage(symbol, leverage);
+        tradeService.setLeverage(symbol, getEffectiveLeverage(symbol));
     }
 
     protected BigDecimal getLimitOrderPrice(String symbol, Side side) {
