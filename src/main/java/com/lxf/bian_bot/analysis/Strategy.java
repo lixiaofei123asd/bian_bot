@@ -1,29 +1,59 @@
 package com.lxf.bian_bot.analysis;
 
 import com.lxf.bian_bot.analysis.enums.TradingSignal;
+import com.lxf.bian_bot.model.TradingDecision;
+import java.math.BigDecimal;
 import java.util.List;
 
 public interface Strategy {
 
-    // 获取策略名称，用于配置文件匹配
     String getName();
 
-    // 获取策略使用的指标
     List<Indicator> getIndicators();
 
-    // 获取满足条件的数量
     int getRequiredMatchCount();
 
-    /**
-     * 判断当前策略是否需要在此时执行。
-     *
-     * <p>执行频率由具体 Strategy 自己决定，外部只负责周期性询问，
-     * 不应该知道策略内部到底是 10 秒、3 分钟还是 5 分钟执行一次。</p>
-     */
+    /** 策略自己决定当前是否到执行时间。 */
     boolean shouldExecute(String symbol);
 
-    /**
-     * 执行策略，策略内部的指标自行获取市场数据。
-     */
+    /** 策略产生交易信号。 */
     TradingSignal execute(String symbol);
+
+    /** 策略产生最终交易决策。默认按 execute() 的方向信号生成开仓决策。 */
+    default TradingDecision decide(String symbol) {
+        TradingSignal signal = execute(symbol);
+        TradingDecision.DecisionType decisionType = switch (signal) {
+            case LONG -> TradingDecision.DecisionType.ENTER_LONG;
+            case SHORT -> TradingDecision.DecisionType.ENTER_SHORT;
+            case WAIT -> TradingDecision.DecisionType.WAIT;
+        };
+        TradingDecision.Direction direction = switch (signal) {
+            case LONG -> TradingDecision.Direction.LONG;
+            case SHORT -> TradingDecision.Direction.SHORT;
+            case WAIT -> null;
+        };
+        return TradingDecision.builder()
+                .symbol(symbol)
+                .decision(decisionType)
+                .direction(direction)
+                .reason("策略: " + getName() + ", 信号: " + signal)
+                .build();
+    }
+
+    /**
+     * TP/SL 因当前价格已经越过触发价而无法创建时，由具体策略决定如何处理。
+     * 默认不平仓，避免保护服务自行做交易决策。
+     */
+    default TradingDecision onProtectionTrigger(String symbol,
+                                                TradingDecision.Direction direction,
+                                                BigDecimal quantity,
+                                                BigDecimal takeProfitPrice,
+                                                BigDecimal stopLossPrice) {
+        return TradingDecision.builder()
+                .symbol(symbol)
+                .decision(TradingDecision.DecisionType.WAIT)
+                .direction(direction)
+                .reason("保护单触发条件异常，由策略自行决定后续动作")
+                .build();
+    }
 }
