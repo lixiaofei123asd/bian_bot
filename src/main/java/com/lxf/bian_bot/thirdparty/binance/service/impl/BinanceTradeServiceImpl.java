@@ -118,12 +118,9 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
     }
 
     @Override
-    public OrderInfo createLimitOrder(String symbol, Side side, TimeInForce timeInForce,
-                                      BigDecimal usdtAmount, BigDecimal price) {
-        BigDecimal normalizedPrice = orderParameterCalculator.normalizeEntryPrice(
-                symbol, price, Side.BUY.equals(side));
-        BigDecimal quantity = orderParameterCalculator.calculateLimitQuantity(
-                symbol, usdtAmount, normalizedPrice);
+    public OrderInfo createLimitOrder(String symbol, Side side, TimeInForce timeInForce, BigDecimal usdtAmount, BigDecimal price) {
+        BigDecimal normalizedPrice = orderParameterCalculator.normalizeEntryPrice(symbol, price, Side.BUY.equals(side));
+        BigDecimal quantity = orderParameterCalculator.calculateLimitQuantity(symbol, usdtAmount, normalizedPrice);
 
         log.info("========== 限价下单 ==========");
         log.info("交易对：{}", symbol);
@@ -146,13 +143,9 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
     }
 
     @Override
-    public OrderInfo createLimitOrderAndTPSLForPrice(String symbol, Side side, TimeInForce timeInForce,
-                                                       BigDecimal quantity, BigDecimal price,
-                                                       BigDecimal tp, BigDecimal sl) {
-        BigDecimal normalizedPrice = orderParameterCalculator.normalizeEntryPrice(
-                symbol, price, Side.BUY.equals(side));
-        BigDecimal normalizedQuantity = orderParameterCalculator.normalizeLimitQuantity(
-                symbol, quantity, normalizedPrice);
+    public OrderInfo createLimitOrderAndTPSLForPrice(String symbol, Side side, TimeInForce timeInForce, BigDecimal quantity, BigDecimal price, BigDecimal tp, BigDecimal sl) {
+        BigDecimal normalizedPrice = orderParameterCalculator.normalizeEntryPrice(symbol, price, Side.BUY.equals(side));
+        BigDecimal normalizedQuantity = orderParameterCalculator.normalizeLimitQuantity(symbol, quantity, normalizedPrice);
         BigDecimal normalizedTp = orderParameterCalculator.normalizeTriggerPrice(symbol, tp, side, true);
         BigDecimal normalizedSl = orderParameterCalculator.normalizeTriggerPrice(symbol, sl, side, false);
 

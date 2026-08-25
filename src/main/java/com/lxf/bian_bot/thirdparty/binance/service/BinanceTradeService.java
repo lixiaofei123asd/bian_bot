@@ -23,20 +23,13 @@ public interface BinanceTradeService {
 
     OrderInfo createMarketOrder(String symbol, Side side, BigDecimal usdtAmount);
 
-    OrderInfo createLimitOrder(String symbol, Side side, TimeInForce timeInForce,
-                               BigDecimal usdtAmount, BigDecimal price);
+    OrderInfo createLimitOrder(String symbol, Side side, TimeInForce timeInForce, BigDecimal usdtAmount, BigDecimal price);
 
-    OrderInfo createLimitOrderAndTPSLForPrice(String symbol, Side side, TimeInForce timeInForce,
-                                               BigDecimal quantity, BigDecimal price,
-                                               BigDecimal tp, BigDecimal sl);
+    OrderInfo createLimitOrderAndTPSLForPrice(String symbol, Side side, TimeInForce timeInForce, BigDecimal quantity, BigDecimal price, BigDecimal tp, BigDecimal sl);
 
-    OrderInfo createLimitOrderAndTPSLForProfitAndLoss(String symbol, Side side, TimeInForce timeInForce,
-                                                      BigDecimal quantity, BigDecimal price,
-                                                      BigDecimal profitAmount, BigDecimal lossAmount);
+    OrderInfo createLimitOrderAndTPSLForProfitAndLoss(String symbol, Side side, TimeInForce timeInForce, BigDecimal quantity, BigDecimal price, BigDecimal profitAmount, BigDecimal lossAmount);
 
-    OrderInfo createLimitOrderAndTPSLForPercentage(String symbol, Side side, TimeInForce timeInForce,
-                                                   BigDecimal quantity, BigDecimal price,
-                                                   BigDecimal profitPercentage, BigDecimal lossPercentage);
+    OrderInfo createLimitOrderAndTPSLForPercentage(String symbol, Side side, TimeInForce timeInForce, BigDecimal quantity, BigDecimal price, BigDecimal profitPercentage, BigDecimal lossPercentage);
 
     OrderInfo closeMarketOrder(String symbol);
 }

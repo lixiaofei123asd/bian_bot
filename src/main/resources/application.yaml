@@ -11,9 +11,9 @@ logging:
 # ==================== 交易配置 ====================
 trading:
   # 是否允许交易信号真正发送订单
-  enabled: true
+  enabled: false
   # 每次开仓使用的 USDT 金额
-  usdt-amount: 10
+  usdt-amount: 250
   # 下单模式：
   # LIMIT  = 限价单
   # MARKET = 市价单

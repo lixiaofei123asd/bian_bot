@@ -133,7 +133,7 @@ public class IndicatorDeepSeek implements Indicator {
     }
 
     private static final String SYSTEM_PROMPT = """
-            你是一个 Binance USDT-M 合约交易策略分析器。
+            你是一个 Binance USDT-M 合约交易策略分析师。
 
             你收到的是 15 分钟级别 K 线、实时行情、盘口、最近成交，以及当前账户持仓和活动订单。
             你的任务不是频繁预测下一秒涨跌，而是制定或检查当前交易计划。
@@ -174,6 +174,6 @@ public class IndicatorDeepSeek implements Indicator {
 
             请重点分析最近 50 根 15 分钟 K 线形成的趋势、波动、支撑阻力、成交量变化，
             再结合实时价格、Order Book、最近成交、Mark Price、Funding Rate、24小时变化，
-            最后结合当前持仓和活动订单给出交易计划。
+            最后结合当前持仓和活动订单给出交易计划。请用中文回答。
             """;
 }
