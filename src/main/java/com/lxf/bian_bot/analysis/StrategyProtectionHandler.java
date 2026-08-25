@@ -11,10 +11,10 @@ import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
 /**
- * 策略保护事件处理器。
+ * 策略生命周期事件桥接器。
  *
- * <p>开仓成交后，把成交事实交给对应 Strategy，由 Strategy 决定 TP/SL；
- * 保护单触发异常后，也由 Strategy 决定是否退出。这里不计算 TP/SL。</p>
+ * <p>本类负责把成交/保护异常事件交给对应 Strategy 做决策，
+ * 然后把 Strategy 返回的决策交给执行层。本类不计算 TP/SL，也不直接调用 Binance。</p>
  */
 @Slf4j
 @Service
@@ -35,15 +35,11 @@ public class StrategyProtectionHandler {
         this.tradingState = tradingState;
     }
 
-    /** 限价/市价开仓成交后，由 Strategy 决定 TP/SL。 */
+    /** 开仓成交后，由 Strategy 决定 TP/SL。 */
     @EventListener
     public void handleOrderFilled(OrderFilledEvent event) {
-        String strategyName = strategyConfig.getStrategyName(event.symbol());
-        Strategy strategy = strategyRegistry.getStrategy(strategyName);
-        if (strategy == null) {
-            log.error("无法找到成交对应策略: symbol={}, strategy={}", event.symbol(), strategyName);
-            return;
-        }
+        Strategy strategy = getStrategy(event.symbol());
+        if (strategy == null) return;
 
         TradingDecision.Direction direction = event.openSide() == Side.BUY
                 ? TradingDecision.Direction.LONG
@@ -54,14 +50,14 @@ public class StrategyProtectionHandler {
                     event.symbol(), direction, event.quantity(), event.entryPrice());
 
             log.info("策略保护配置已生成: strategy={}, symbol={}, enabled={}, tp={}, sl={}",
-                    strategyName, event.symbol(), protection != null && protection.enabled(),
+                    strategy.getName(), event.symbol(), protection != null && protection.enabled(),
                     protection == null ? null : protection.takeProfitPrice(),
                     protection == null ? null : protection.stopLossPrice());
 
             strategyExecutionService.executeProtection(
                     event.symbol(), event.openSide(), event.quantity(), protection);
         } catch (Exception e) {
-            log.error("执行策略保护失败: strategy={}, symbol={}", strategyName, event.symbol(), e);
+            log.error("执行策略保护失败: strategy={}, symbol={}", strategy.getName(), event.symbol(), e);
             tradingState.updateExecutionState(event.symbol(), TradingExecutionState.FAILED);
         }
     }
@@ -69,22 +65,43 @@ public class StrategyProtectionHandler {
     /** 保护单无法创建且价格已经越过触发价，由 Strategy 决定后续动作。 */
     @EventListener
     public void handleProtectionTrigger(ProtectionTriggerEvent event) {
-        log.warn("收到保护单触发事件: symbol={}, side={}, quantity={}, tp={}, sl={}",
-                event.symbol(), event.openSide(), event.quantity(),
-                event.takeProfitPrice(), event.stopLossPrice());
+        Strategy strategy = getStrategy(event.symbol());
+        if (strategy == null) return;
+
+        TradingDecision.Direction direction = event.openSide() == Side.BUY
+                ? TradingDecision.Direction.LONG
+                : TradingDecision.Direction.SHORT;
 
         try {
-            strategyExecutionService.handleProtectionTrigger(
+            TradingDecision decision = strategy.onProtectionTrigger(
                     event.symbol(),
-                    event.openSide() == Side.BUY
-                            ? TradingDecision.Direction.LONG
-                            : TradingDecision.Direction.SHORT,
+                    direction,
                     event.quantity(),
                     event.takeProfitPrice(),
                     event.stopLossPrice());
+
+            if (decision == null) {
+                log.warn("Strategy 未返回保护触发决策: strategy={}, symbol={}",
+                        strategy.getName(), event.symbol());
+                return;
+            }
+
+            log.warn("保护触发交给策略决策: strategy={}, symbol={}, decision={}",
+                    strategy.getName(), event.symbol(), decision.getDecision());
+            strategyExecutionService.execute(decision);
         } catch (Exception e) {
-            log.error("处理保护单触发事件失败: symbol={}", event.symbol(), e);
+            log.error("处理保护单触发事件失败: strategy={}, symbol={}",
+                    strategy.getName(), event.symbol(), e);
             tradingState.updateExecutionState(event.symbol(), TradingExecutionState.FAILED);
         }
+    }
+
+    private Strategy getStrategy(String symbol) {
+        String strategyName = strategyConfig.getStrategyName(symbol);
+        Strategy strategy = strategyRegistry.getStrategy(strategyName);
+        if (strategy == null) {
+            log.error("无法找到 symbol 对应策略: symbol={}, strategy={}", symbol, strategyName);
+        }
+        return strategy;
     }
 }
