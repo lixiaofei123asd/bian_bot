@@ -99,7 +99,7 @@ public class AiStrategy implements Strategy {
                 .minEntryPrice(result.getMinEntryPrice())
                 .maxEntryPrice(result.getMaxEntryPrice())
                 .entryPrice(result.getEntryPrice())
-                .usdtAmount(result.getUsdtAmount())
+                .marginAmount(result.getUsdtAmount())
                 .takeProfitPrice(result.getTakeProfitPrice())
                 .stopLossPrice(result.getStopLossPrice())
                 .reason(result.getReason())
