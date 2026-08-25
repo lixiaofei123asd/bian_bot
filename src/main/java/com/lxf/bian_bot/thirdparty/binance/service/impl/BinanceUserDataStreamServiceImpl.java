@@ -4,6 +4,7 @@ import com.binance.connector.client.common.ApiResponse;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.api.UserDataStreamsApi;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.StartUserDataStreamResponse;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.lxf.bian_bot.analysis.OrderFilledEvent;
 import com.lxf.bian_bot.config.binance.BinanceConfig;
 import com.lxf.bian_bot.thirdparty.binance.model.AccountInfo;
 import com.lxf.bian_bot.thirdparty.binance.model.OrderInfo;
@@ -19,6 +20,7 @@ import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -33,6 +35,7 @@ public class BinanceUserDataStreamServiceImpl implements BinanceUserDataStreamSe
     private final UserDataStreamsApi userDataStreamsApi;
     private final TradingState tradingState;
     private final BinanceUserDataStreamClient client;
+    private final ApplicationEventPublisher eventPublisher;
 
     private final List<Consumer<AccountInfo>> accountListeners = new CopyOnWriteArrayList<>();
     private final List<Consumer<PositionInfo>> positionListeners = new CopyOnWriteArrayList<>();
@@ -44,9 +47,11 @@ public class BinanceUserDataStreamServiceImpl implements BinanceUserDataStreamSe
 
     public BinanceUserDataStreamServiceImpl(UserDataStreamsApi userDataStreamsApi,
                                             BinanceConfig binanceConfig,
-                                            TradingState tradingState) {
+                                            TradingState tradingState,
+                                            ApplicationEventPublisher eventPublisher) {
         this.userDataStreamsApi = userDataStreamsApi;
         this.tradingState = tradingState;
+        this.eventPublisher = eventPublisher;
         this.client = new BinanceUserDataStreamClient(
                 binanceConfig.getWebSocketStreamsUrl(),
                 binanceConfig.isProxyEnabled(),
@@ -236,6 +241,8 @@ public class BinanceUserDataStreamServiceImpl implements BinanceUserDataStreamSe
         String executionType = text(orderNode, "x");
         boolean reduceOnly = orderNode.path("R").asBoolean(false);
         BigDecimal lastFilledQty = number(orderNode, "l", ZERO);
+        BigDecimal executedQty = number(orderNode, "z", ZERO);
+        BigDecimal avgPrice = number(orderNode, "ap", ZERO);
 
         if ("TRADE".equals(executionType)) {
             tradingState.addTodayRealizedPnl(number(orderNode, "rp", ZERO));
@@ -271,8 +278,8 @@ public class BinanceUserDataStreamServiceImpl implements BinanceUserDataStreamSe
                 .side(text(orderNode, "S"))
                 .type(text(orderNode, "o"))
                 .origQty(number(orderNode, "q", ZERO))
-                .executedQty(number(orderNode, "z", ZERO))
-                .avgPrice(number(orderNode, "ap", ZERO))
+                .executedQty(executedQty)
+                .avgPrice(avgPrice)
                 .price(number(orderNode, "p", ZERO))
                 .status(status)
                 .reduceOnly(reduceOnly)
@@ -285,6 +292,29 @@ public class BinanceUserDataStreamServiceImpl implements BinanceUserDataStreamSe
 
         tradingState.refreshExecutionState(symbol);
         notifyListeners(orderListeners, order);
+
+        // User Data Stream 是最终成交事实来源。
+        // 只有真正的开仓成交才发布 OrderFilledEvent；reduceOnly 保护单/平仓单不会触发策略再次设置保护。
+        // 使用最终累计成交数量 z 和成交均价 ap，避免部分成交重复创建 TP/SL。
+        if ("TRADE".equals(executionType)
+                && "FILLED".equals(status)
+                && !reduceOnly
+                && executedQty.compareTo(ZERO) > 0
+                && avgPrice.compareTo(ZERO) > 0) {
+            Side openSide = "BUY".equalsIgnoreCase(text(orderNode, "S"))
+                    ? com.binance.connector.client.derivatives_trading_usds_futures.rest.model.Side.BUY
+                    : com.binance.connector.client.derivatives_trading_usds_futures.rest.model.Side.SELL;
+
+            log.info("开仓订单已最终成交，发布 OrderFilledEvent: symbol={}, orderId={}, side={}, quantity={}, entryPrice={}",
+                    symbol, orderId, openSide, executedQty, avgPrice);
+
+            eventPublisher.publishEvent(new OrderFilledEvent(
+                    symbol,
+                    orderId,
+                    openSide,
+                    executedQty,
+                    avgPrice));
+        }
     }
 
     private boolean isOpenStatus(String status) {
