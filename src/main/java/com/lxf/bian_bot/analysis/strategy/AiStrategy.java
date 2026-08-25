@@ -99,14 +99,12 @@ public class AiStrategy implements Strategy {
                 .minEntryPrice(result.getMinEntryPrice())
                 .maxEntryPrice(result.getMaxEntryPrice())
                 .entryPrice(result.getEntryPrice())
-                .marginAmount(result.getUsdtAmount())
                 .takeProfitPrice(result.getTakeProfitPrice())
                 .stopLossPrice(result.getStopLossPrice())
                 .reason(result.getReason())
                 .build();
     }
 
-    /** AI 策略自己决定保护价格；优先使用 AI 分析结果中的 TP/SL。 */
     @Override
     public ProtectionConfig calculateProtection(String symbol,
                                                 TradingDecision.Direction direction,
