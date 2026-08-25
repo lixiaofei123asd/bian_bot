@@ -30,9 +30,6 @@ public class TradingDecision {
     /** 计划入场价格 */
     private BigDecimal entryPrice;
 
-    /** 本次开仓使用的保证金金额，不是仓位名义价值。 */
-    private BigDecimal marginAmount;
-
     /** 策略计算出的最终止损价格。 */
     private BigDecimal stopLossPrice;
 
