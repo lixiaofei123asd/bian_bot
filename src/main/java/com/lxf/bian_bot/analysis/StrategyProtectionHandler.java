@@ -1,9 +1,9 @@
 package com.lxf.bian_bot.analysis;
 
+import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.Side;
 import com.lxf.bian_bot.config.strategy.StrategyConfig;
 import com.lxf.bian_bot.model.TradingDecision;
 import com.lxf.bian_bot.thirdparty.binance.service.BinanceTradeService;
-import com.lxf.bian_bot.trading.state.TradingExecutionState;
 import com.lxf.bian_bot.trading.state.TradingState;
 import java.math.BigDecimal;
 import lombok.extern.slf4j.Slf4j;
@@ -29,7 +29,7 @@ public class StrategyProtectionHandler {
         this.tradingState = tradingState;
     }
 
-    public void handle(String symbol, com.binance.connector.client.derivatives_trading_usds_futures.rest.model.Side openSide,
+    public void handle(String symbol, Side openSide,
                        BigDecimal quantity, BigDecimal takeProfitPrice, BigDecimal stopLossPrice) {
         String strategyName = strategyConfig.getStrategyName(symbol);
         Strategy strategy = strategyRegistry.getStrategy(strategyName);
@@ -38,7 +38,7 @@ public class StrategyProtectionHandler {
             return;
         }
 
-        TradingDecision.Direction direction = openSide.name().equals("BUY")
+        TradingDecision.Direction direction = openSide == Side.BUY
                 ? TradingDecision.Direction.LONG : TradingDecision.Direction.SHORT;
         TradingDecision decision = strategy.onProtectionTrigger(symbol, direction, quantity, takeProfitPrice, stopLossPrice);
         if (decision == null || decision.getDecision() == null) {
@@ -51,7 +51,7 @@ public class StrategyProtectionHandler {
 
         if (TradingDecision.DecisionType.EXIT.equals(decision.getDecision())) {
             tradeService.closeMarketOrder(symbol);
-            tradingState.removeOrders(symbol);
+            tradingState.clearSymbolOrders(symbol);
             tradingState.refreshExecutionState(symbol);
         }
     }
