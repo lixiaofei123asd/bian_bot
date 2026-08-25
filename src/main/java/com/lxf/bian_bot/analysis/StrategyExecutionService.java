@@ -210,23 +210,6 @@ public class StrategyExecutionService {
             boolean filled = executedQty != null && executedQty.compareTo(BigDecimal.ZERO) > 0;
             tradingState.updateExecutionState(symbol,
                     filled ? TradingExecutionState.POSITION_OPEN : TradingExecutionState.ORDER_OPEN);
-
-            if (filled) {
-                BigDecimal entryPrice = orderInfo.getAvgPrice();
-                if (entryPrice == null || entryPrice.compareTo(BigDecimal.ZERO) <= 0) {
-                    entryPrice = orderInfo.getPrice();
-                }
-                if (entryPrice != null && entryPrice.compareTo(BigDecimal.ZERO) > 0) {
-                    Side openSide = TradingDecision.DecisionType.ENTER_LONG.equals(decision.getDecision())
-                            ? Side.BUY : Side.SELL;
-                    eventPublisher.publishEvent(new OrderFilledEvent(
-                            symbol,
-                            orderInfo.getOrderId(),
-                            openSide,
-                            executedQty,
-                            entryPrice));
-                }
-            }
         } finally {
             tradingState.finishOrderSubmitting(symbol);
         }
