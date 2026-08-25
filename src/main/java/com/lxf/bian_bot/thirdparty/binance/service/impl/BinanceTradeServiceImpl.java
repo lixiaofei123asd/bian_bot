@@ -13,7 +13,6 @@ import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.NewOrderRequest;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.NewOrderRespType;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.NewOrderResponse;
-import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.NewOrderRespType;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.PositionInformationV2Response;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.PositionInformationV2ResponseInner;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.Side;
@@ -62,9 +61,7 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
     @Override
     public PositionInfo getPositionInfo(String symbol) {
         ApiResponse<PositionInformationV2Response> response = api.positionInformationV2(symbol, null);
-        if (response.getData() == null || response.getData().isEmpty()) {
-            return PositionInfo.builder().symbol(symbol).build();
-        }
+        if (response.getData() == null || response.getData().isEmpty()) return PositionInfo.builder().symbol(symbol).build();
         return toPositionInfo(response.getData().getFirst());
     }
 
@@ -90,18 +87,15 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
         request.setLeverage(leverage);
         ApiResponse<ChangeInitialLeverageResponse> response = api.changeInitialLeverage(request);
         ChangeInitialLeverageResponse data = response.getData();
-        return LeverageInfo.builder()
-                .symbol(data.getSymbol())
-                .leverage(data.getLeverage().intValue())
-                .maxNotionalValue(parseBigDecimal(data.getMaxNotionalValue()))
-                .build();
+        return LeverageInfo.builder().symbol(data.getSymbol()).leverage(data.getLeverage().intValue())
+                .maxNotionalValue(parseBigDecimal(data.getMaxNotionalValue())).build();
     }
 
     @Override
     public void createProtectionOrders(String symbol, Side openSide, BigDecimal quantity,
                                        BigDecimal takeProfitPrice, BigDecimal stopLossPrice) {
-        BigDecimal normalizedEntryQuantity = orderParameterCalculator.normalizeLimitQuantity(symbol, quantity, BigDecimal.ZERO);
-        if (normalizedEntryQuantity.compareTo(BigDecimal.ZERO) <= 0) {
+        BigDecimal normalizedQuantity = orderParameterCalculator.normalizeMarketQuantity(symbol, quantity, BigDecimal.ZERO);
+        if (normalizedQuantity.compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalArgumentException("保护单数量无效: symbol=" + symbol + ", quantity=" + quantity);
         }
 
@@ -113,7 +107,7 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
         log.info("交易对：{}", symbol);
         log.info("开仓方向：{}", openSide);
         log.info("平仓方向：{}", closeSide);
-        log.info("保护数量：{}", normalizedEntryQuantity);
+        log.info("保护数量：{}", normalizedQuantity);
         log.info("止盈价格：{}", normalizedTp);
         log.info("止损价格：{}", normalizedSl);
 
@@ -139,8 +133,7 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
             }
             NewAlgoOrderResponse data = response.getData();
             log.info("{} 保护单创建成功: symbol={}, algoId={}, type={}, side={}, triggerPrice={}, status={}",
-                    name, symbol, data.getAlgoId(), data.getOrderType(), data.getSide(),
-                    data.getTriggerPrice(), data.getAlgoStatus());
+                    name, symbol, data.getAlgoId(), data.getOrderType(), data.getSide(), data.getTriggerPrice(), data.getAlgoStatus());
         } catch (ApiException e) {
             if (e.getMessage() != null && e.getMessage().contains(IMMEDIATE_TRIGGER_CODE)) throw e;
             throw e;
@@ -154,7 +147,6 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
         BigDecimal price = Side.BUY.equals(side)
                 ? new BigDecimal(Objects.requireNonNull(bookTickerData.getSymbolOrderBookTickerResponse1().getAskPrice()))
                 : new BigDecimal(Objects.requireNonNull(bookTickerData.getSymbolOrderBookTickerResponse1().getBidPrice()));
-
         BigDecimal quantity = orderParameterCalculator.calculateMarketQuantity(symbol, usdtAmount, price);
 
         log.info("========== 市价下单 ==========");
@@ -202,9 +194,6 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
     public OrderInfo createLimitOrderAndTPSLForPrice(String symbol, Side side, TimeInForce timeInForce, BigDecimal quantity, BigDecimal price, BigDecimal tp, BigDecimal sl) {
         BigDecimal normalizedPrice = orderParameterCalculator.normalizeEntryPrice(symbol, price, Side.BUY.equals(side));
         BigDecimal normalizedQuantity = orderParameterCalculator.normalizeLimitQuantity(symbol, quantity, normalizedPrice);
-        BigDecimal normalizedTp = orderParameterCalculator.normalizeTriggerPrice(symbol, tp, side, true);
-        BigDecimal normalizedSl = orderParameterCalculator.normalizeTriggerPrice(symbol, sl, side, false);
-
         NewOrderRequest entryRequest = new NewOrderRequest();
         entryRequest.type(OrderType.LIMIT.name());
         entryRequest.symbol(symbol);
@@ -213,11 +202,8 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
         entryRequest.setQuantity(normalizedQuantity.doubleValue());
         entryRequest.setPrice(normalizedPrice.doubleValue());
         entryRequest.setNewOrderRespType(NewOrderRespType.RESULT);
-
         ApiResponse<NewOrderResponse> entryResponse = api.newOrder(entryRequest);
-        if (entryResponse.getStatusCode() != 200 || entryResponse.getData() == null) {
-            throw new RuntimeException("限价开仓失败！");
-        }
+        if (entryResponse.getStatusCode() != 200 || entryResponse.getData() == null) throw new RuntimeException("限价开仓失败！");
         return toOrderInfo(entryResponse.getData());
     }
 
@@ -225,8 +211,7 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
     public OrderInfo createLimitOrderAndTPSLForProfitAndLoss(String symbol, Side side, TimeInForce timeInForce,
                                                                BigDecimal quantity, BigDecimal price,
                                                                BigDecimal profitAmount, BigDecimal lossAmount) {
-        if (profitAmount == null || profitAmount.compareTo(BigDecimal.ZERO) <= 0
-                || lossAmount == null || lossAmount.compareTo(BigDecimal.ZERO) <= 0) {
+        if (profitAmount == null || profitAmount.compareTo(BigDecimal.ZERO) <= 0 || lossAmount == null || lossAmount.compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalArgumentException("盈利和亏损金额必须大于 0：profitAmount=" + profitAmount + ", lossAmount=" + lossAmount);
         }
         BigDecimal normalizedPrice = orderParameterCalculator.normalizeEntryPrice(symbol, price, Side.BUY.equals(side));
@@ -242,8 +227,7 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
     public OrderInfo createLimitOrderAndTPSLForPercentage(String symbol, Side side, TimeInForce timeInForce,
                                                            BigDecimal quantity, BigDecimal price,
                                                            BigDecimal profitPercentage, BigDecimal lossPercentage) {
-        if (profitPercentage == null || profitPercentage.compareTo(BigDecimal.ZERO) <= 0
-                || lossPercentage == null || lossPercentage.compareTo(BigDecimal.ZERO) <= 0) {
+        if (profitPercentage == null || profitPercentage.compareTo(BigDecimal.ZERO) <= 0 || lossPercentage == null || lossPercentage.compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalArgumentException("盈利和亏损百分比必须大于 0：profitPercentage=" + profitPercentage + ", lossPercentage=" + lossPercentage);
         }
         BigDecimal normalizedPrice = orderParameterCalculator.normalizeEntryPrice(symbol, price, Side.BUY.equals(side));
@@ -260,9 +244,7 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
     public OrderInfo closeMarketOrder(String symbol) {
         PositionInfo positionInfo = getPositionInfo(symbol);
         BigDecimal positionAmt = positionInfo.getPositionAmt();
-        if (positionAmt == null || positionAmt.compareTo(BigDecimal.ZERO) == 0) {
-            throw new IllegalStateException("当前没有可平仓位：" + symbol);
-        }
+        if (positionAmt == null || positionAmt.compareTo(BigDecimal.ZERO) == 0) throw new IllegalStateException("当前没有可平仓位：" + symbol);
         Side closeSide = positionAmt.compareTo(BigDecimal.ZERO) > 0 ? Side.SELL : Side.BUY;
         BigDecimal quantity = orderParameterCalculator.normalizeMarketQuantity(symbol, positionAmt.abs(), BigDecimal.ZERO);
         NewOrderRequest request = new NewOrderRequest();
@@ -276,29 +258,17 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
     }
 
     private PositionInfo toPositionInfo(PositionInformationV2ResponseInner data) {
-        return PositionInfo.builder()
-                .symbol(data.getSymbol())
-                .positionAmt(parseBigDecimal(data.getPositionAmt()))
-                .entryPrice(parseBigDecimal(data.getEntryPrice()))
-                .breakEvenPrice(parseBigDecimal(data.getBreakEvenPrice()))
-                .markPrice(parseBigDecimal(data.getMarkPrice()))
-                .notional(parseBigDecimal(data.getNotional()))
-                .unrealizedProfit(parseBigDecimal(data.getUnRealizedProfit()))
-                .leverage(parseInt(data.getLeverage()))
-                .marginType(data.getMarginType())
-                .positionSide(data.getPositionSide())
-                .liquidationPrice(parseBigDecimal(data.getLiquidationPrice()))
-                .autoAddMargin(Boolean.parseBoolean(data.getIsAutoAddMargin()))
-                .build();
+        return PositionInfo.builder().symbol(data.getSymbol()).positionAmt(parseBigDecimal(data.getPositionAmt()))
+                .entryPrice(parseBigDecimal(data.getEntryPrice())).breakEvenPrice(parseBigDecimal(data.getBreakEvenPrice()))
+                .markPrice(parseBigDecimal(data.getMarkPrice())).notional(parseBigDecimal(data.getNotional()))
+                .unrealizedProfit(parseBigDecimal(data.getUnRealizedProfit())).leverage(parseInt(data.getLeverage()))
+                .marginType(data.getMarginType()).positionSide(data.getPositionSide())
+                .liquidationPrice(parseBigDecimal(data.getLiquidationPrice())).autoAddMargin(Boolean.parseBoolean(data.getIsAutoAddMargin())).build();
     }
 
-    private BigDecimal parseBigDecimal(String value) {
-        return value == null || value.isBlank() ? BigDecimal.ZERO : new BigDecimal(value);
-    }
+    private BigDecimal parseBigDecimal(String value) { return value == null || value.isBlank() ? BigDecimal.ZERO : new BigDecimal(value); }
 
-    private int parseInt(String value) {
-        return value == null || value.isBlank() ? 0 : Integer.parseInt(value);
-    }
+    private int parseInt(String value) { return value == null || value.isBlank() ? 0 : Integer.parseInt(value); }
 
     private OrderInfo newOrder(NewOrderRequest request, String message) {
         ApiResponse<NewOrderResponse> response = api.newOrder(request);
@@ -307,20 +277,10 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
     }
 
     private OrderInfo toOrderInfo(NewOrderResponse data) {
-        return OrderInfo.builder()
-                .symbol(data.getSymbol())
-                .orderId(data.getOrderId())
-                .clientOrderId(data.getClientOrderId())
-                .side(data.getSide())
-                .type(data.getType())
-                .origQty(parseBigDecimal(data.getOrigQty()))
-                .executedQty(parseBigDecimal(data.getExecutedQty()))
-                .avgPrice(parseBigDecimal(data.getAvgPrice()))
-                .price(parseBigDecimal(data.getPrice()))
-                .status(data.getStatus())
-                .reduceOnly(data.getReduceOnly())
-                .positionSide(data.getPositionSide())
-                .updateTime(data.getUpdateTime())
-                .build();
+        return OrderInfo.builder().symbol(data.getSymbol()).orderId(data.getOrderId()).clientOrderId(data.getClientOrderId())
+                .side(data.getSide()).type(data.getType()).origQty(parseBigDecimal(data.getOrigQty()))
+                .executedQty(parseBigDecimal(data.getExecutedQty())).avgPrice(parseBigDecimal(data.getAvgPrice()))
+                .price(parseBigDecimal(data.getPrice())).status(data.getStatus()).reduceOnly(data.getReduceOnly())
+                .positionSide(data.getPositionSide()).updateTime(data.getUpdateTime()).build();
     }
 }
