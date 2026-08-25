@@ -21,9 +21,11 @@ public interface BinanceTradeService {
 
     LeverageInfo setLeverage(String symbol, Long leverage);
 
-    OrderInfo createMarketOrder(String symbol, Side side, BigDecimal usdtAmount);
+    /** 创建市价开仓单；positionNotional 表示仓位名义价值，不是保证金。 */
+    OrderInfo createMarketOrder(String symbol, Side side, BigDecimal positionNotional);
 
-    OrderInfo createLimitOrder(String symbol, Side side, TimeInForce timeInForce, BigDecimal usdtAmount, BigDecimal price);
+    /** 创建限价开仓单；positionNotional 表示仓位名义价值，不是保证金。 */
+    OrderInfo createLimitOrder(String symbol, Side side, TimeInForce timeInForce, BigDecimal positionNotional, BigDecimal price);
 
     OrderInfo createLimitOrderAndTPSLForPrice(String symbol, Side side, TimeInForce timeInForce, BigDecimal quantity, BigDecimal price, BigDecimal tp, BigDecimal sl);
 
