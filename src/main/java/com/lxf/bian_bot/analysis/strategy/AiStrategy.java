@@ -39,6 +39,7 @@ public class AiStrategy implements Strategy {
     private final TradingState tradingState;
     private final TradingConfig tradingConfig;
     private final ConcurrentMap<String, Instant> lastExecuteTimes = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, IndicatorResult> lastAnalysisResults = new ConcurrentHashMap<>();
 
     public AiStrategy(IndicatorDeepSeek deepSeek,
                       BinanceMarketService marketService,
@@ -91,7 +92,7 @@ public class AiStrategy implements Strategy {
         BinancePriceTicker priceTicker = marketService.getPrice(symbol);
         TradingDecision.Direction direction = resolveDirection(result, position);
 
-        return TradingDecision.builder()
+        TradingDecision decision = TradingDecision.builder()
                 .symbol(symbol)
                 .decision(toDecisionType(action, result))
                 .direction(direction)
@@ -103,6 +104,21 @@ public class AiStrategy implements Strategy {
                 .stopLossPrice(result.getStopLossPrice())
                 .reason(result.getReason())
                 .build();
+
+        // 保存本次策略决定使用的 AI 结果。
+        // 开仓成交后由 StrategyProtectionHandler 调用 calculateProtection()，
+        // 必须使用这一次分析得到的 TP/SL，而不是重新请求一次 DeepSeek。
+        lastAnalysisResults.put(symbol, result);
+
+        log.info("AI策略决策: symbol={}, decision={}, direction={}, entryPrice={}, tp={}, sl={}",
+                symbol,
+                decision.getDecision(),
+                decision.getDirection(),
+                decision.getEntryPrice(),
+                decision.getTakeProfitPrice(),
+                decision.getStopLossPrice());
+
+        return decision;
     }
 
     @Override
@@ -110,14 +126,32 @@ public class AiStrategy implements Strategy {
                                                 TradingDecision.Direction direction,
                                                 BigDecimal quantity,
                                                 BigDecimal entryPrice) {
-        if (!tradingConfig.isTakeProfitStopLossEnabled()) return ProtectionConfig.disabled();
-        IndicatorResult result = analyze(symbol);
-        if (result.getTakeProfitPrice() != null && result.getStopLossPrice() != null
-                && result.getTakeProfitPrice().compareTo(BigDecimal.ZERO) > 0
-                && result.getStopLossPrice().compareTo(BigDecimal.ZERO) > 0) {
-            return ProtectionConfig.of(result.getTakeProfitPrice(), result.getStopLossPrice());
+        if (!tradingConfig.isTakeProfitStopLossEnabled()) {
+            log.info("AI策略未启用止盈止损: symbol={}", symbol);
+            return ProtectionConfig.disabled();
         }
-        return ProtectionConfig.disabled();
+
+        // 不重新调用 DeepSeek，直接使用本次 decide() 保存的策略结果。
+        IndicatorResult result = lastAnalysisResults.get(symbol);
+        if (result == null) {
+            log.warn("AI策略没有找到本次开仓对应的分析结果: symbol={}", symbol);
+            return ProtectionConfig.disabled();
+        }
+
+        BigDecimal takeProfitPrice = result.getTakeProfitPrice();
+        BigDecimal stopLossPrice = result.getStopLossPrice();
+
+        if (takeProfitPrice == null || stopLossPrice == null
+                || takeProfitPrice.compareTo(BigDecimal.ZERO) <= 0
+                || stopLossPrice.compareTo(BigDecimal.ZERO) <= 0) {
+            log.warn("AI未提供有效的 TP/SL: symbol={}, tp={}, sl={}",
+                    symbol, takeProfitPrice, stopLossPrice);
+            return ProtectionConfig.disabled();
+        }
+
+        log.info("AI策略保护价格: symbol={}, entryPrice={}, quantity={}, tp={}, sl={}",
+                symbol, entryPrice, quantity, takeProfitPrice, stopLossPrice);
+        return ProtectionConfig.of(takeProfitPrice, stopLossPrice);
     }
 
     @Override
@@ -137,8 +171,9 @@ public class AiStrategy implements Strategy {
     private IndicatorResult analyze(String symbol) {
         IndicatorResult result = deepSeek.calculateWithContext(symbol, buildStrategyContext(symbol));
         if (result == null) throw new IllegalStateException("DeepSeek 未返回 IndicatorResult: symbol=" + symbol);
-        log.info("AI策略分析完成: symbol={}, action={}, signal={}, confidence={}, reason={}",
-                symbol, result.getAction(), result.getSignal(), result.getConfidence(), result.getReason());
+        log.info("AI策略分析完成: symbol={}, action={}, signal={}, confidence={}, entryPrice={}, tp={}, sl={}, reason={}",
+                symbol, result.getAction(), result.getSignal(), result.getConfidence(),
+                result.getEntryPrice(), result.getTakeProfitPrice(), result.getStopLossPrice(), result.getReason());
         return result;
     }
 
