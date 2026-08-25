@@ -17,14 +17,11 @@ public interface BinanceTradeService {
     boolean setMarginType(String symbol, TradingMarginType tradingMarginType);
     LeverageInfo setLeverage(String symbol, Long leverage);
 
-    /** 创建市价开仓单；positionNotional 表示仓位名义价值，不是保证金。 */
     OrderInfo createMarketOrder(String symbol, Side side, BigDecimal positionNotional);
-
-    /** 创建限价开仓单；positionNotional 表示仓位名义价值，不是保证金。 */
     OrderInfo createLimitOrder(String symbol, Side side, TimeInForce timeInForce, BigDecimal positionNotional, BigDecimal price);
 
     /** 创建已经成交仓位的 TP/SL 保护单；价格由 Strategy 决定，本方法只负责调用 Binance。 */
-    void createProtectionOrders(String symbol, Side openSide, BigDecimal quantity, BigDecimal entryPrice,
+    void createProtectionOrders(String symbol, Side openSide, BigDecimal quantity,
                                 BigDecimal takeProfitPrice, BigDecimal stopLossPrice);
 
     OrderInfo createLimitOrderAndTPSLForPrice(String symbol, Side side, TimeInForce timeInForce, BigDecimal quantity, BigDecimal price, BigDecimal tp, BigDecimal sl);
