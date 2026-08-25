@@ -15,6 +15,7 @@ import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.NewOrderResponse;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.PositionInformationV2Response;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.PositionInformationV2ResponseInner;
+import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.PositionSide;
 import com.binance.connector.client.derivatives_trading_usds_futures.rest.model.Side;
 import com.lxf.bian_bot.thirdparty.binance.enums.OrderType;
 import com.lxf.bian_bot.thirdparty.binance.enums.TimeInForce;
@@ -108,7 +109,7 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
         BigDecimal normalizedSl = orderParameterCalculator.normalizeTriggerPrice(
                 symbol, stopLossPrice, openSide, false);
         Side closeSide = openSide == Side.BUY ? Side.SELL : Side.BUY;
-        String positionSide = resolvePositionSide(symbol, openSide);
+        PositionSide positionSide = resolvePositionSide(symbol, openSide);
 
         log.info("========== 创建策略保护单 ==========");
         log.info("交易对：{}", symbol);
@@ -125,7 +126,7 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
 
     private void createProtectionAlgoOrder(String symbol,
                                            Side side,
-                                           String positionSide,
+                                           PositionSide positionSide,
                                            OrderType type,
                                            BigDecimal triggerPrice,
                                            String name) {
@@ -161,7 +162,7 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
         log.info("方向：{}", side);
         log.info("实际数量：{}", quantity);
 
-        String positionSide = resolvePositionSide(symbol, side);
+        PositionSide positionSide = resolvePositionSide(symbol, side);
         log.info("持仓模式 positionSide：{}", positionSide);
         log.info("==============================");
 
@@ -187,7 +188,7 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
         log.info("生效时间：{}", timeInForce.name());
         log.info("修正后数量：{}", quantity);
 
-        String positionSide = resolvePositionSide(symbol, side);
+        PositionSide positionSide = resolvePositionSide(symbol, side);
         log.info("持仓模式 positionSide：{}", positionSide);
 
         NewOrderRequest request = new NewOrderRequest();
@@ -215,7 +216,7 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
         Side closeSide = positionAmt.compareTo(BigDecimal.ZERO) > 0 ? Side.SELL : Side.BUY;
         BigDecimal quantity = orderParameterCalculator.normalizeMarketQuantity(
                 symbol, positionAmt.abs(), BigDecimal.ZERO);
-        String positionSide = resolvePositionSide(symbol, closeSide);
+        PositionSide positionSide = resolvePositionSide(symbol, closeSide);
 
         NewOrderRequest request = new NewOrderRequest();
         request.setSymbol(symbol);
@@ -230,16 +231,10 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
         return newOrder(request, "市价平仓失败！");
     }
 
-    /**
-     * 根据 Binance 当前持仓返回正确的 positionSide。
-     *
-     * 单向持仓：BOTH
-     * 双向持仓：BUY -> LONG，SELL -> SHORT
-     */
-    private String resolvePositionSide(String symbol, Side orderSide) {
+    private PositionSide resolvePositionSide(String symbol, Side orderSide) {
         ApiResponse<PositionInformationV2Response> response = api.positionInformationV2(symbol, null);
         if (response.getData() == null || response.getData().isEmpty()) {
-            return orderSide == Side.BUY ? "LONG" : "SHORT";
+            return orderSide == Side.BUY ? PositionSide.LONG : PositionSide.SHORT;
         }
 
         boolean hedgeMode = response.getData().stream()
@@ -247,9 +242,9 @@ public class BinanceTradeServiceImpl implements BinanceTradeService {
                 .anyMatch(side -> "LONG".equalsIgnoreCase(side) || "SHORT".equalsIgnoreCase(side));
 
         if (!hedgeMode) {
-            return "BOTH";
+            return PositionSide.BOTH;
         }
-        return orderSide == Side.BUY ? "LONG" : "SHORT";
+        return orderSide == Side.BUY ? PositionSide.LONG : PositionSide.SHORT;
     }
 
     private PositionInfo toPositionInfo(PositionInformationV2ResponseInner data) {
