@@ -6,6 +6,8 @@ import com.lxf.bian_bot.config.strategy.StrategyConfig;
 import com.lxf.bian_bot.model.TradingDecision;
 import com.lxf.bian_bot.trading.state.TradingExecutionState;
 import com.lxf.bian_bot.trading.state.TradingState;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
@@ -25,6 +27,11 @@ public class StrategyProtectionHandler {
     private final StrategyConfig strategyConfig;
     private final TradingState tradingState;
 
+    /**
+     * 防止同一个开仓订单因为 User Data Stream 重复事件而重复创建 TP/SL。
+     */
+    private final Set<Long> processedFilledOrderIds = ConcurrentHashMap.newKeySet();
+
     public StrategyProtectionHandler(StrategyExecutionService strategyExecutionService,
                                      StrategyRegistry strategyRegistry,
                                      StrategyConfig strategyConfig,
@@ -35,29 +42,77 @@ public class StrategyProtectionHandler {
         this.tradingState = tradingState;
     }
 
-    /** 开仓成交后，由 Strategy 决定 TP/SL。 */
+    /**
+     * 开仓订单真正 FILLED 后，由 Strategy 决定 TP/SL。
+     *
+     * <p>注意：这里使用 User Data Stream 返回的真实成交数量和真实成交均价，
+     * 不使用 AI 的 entryPrice，也不使用下单前盘口价格。</p>
+     */
     @EventListener
     public void handleOrderFilled(OrderFilledEvent event) {
-        Strategy strategy = getStrategy(event.symbol());
-        if (strategy == null) return;
+        if (event == null || event.orderId() <= 0L) {
+            log.warn("收到无效 OrderFilledEvent: {}", event);
+            return;
+        }
+
+        if (!processedFilledOrderIds.add(event.orderId())) {
+            log.warn("忽略重复的开仓成交事件: symbol={}, orderId={}",
+                    event.symbol(), event.orderId());
+            return;
+        }
+
+        String strategyName = strategyConfig.getStrategyName(event.symbol());
+        Strategy strategy = strategyRegistry.getStrategy(strategyName);
+        if (strategy == null) {
+            log.error("开仓已经成交，但找不到对应 Strategy: symbol={}, orderId={}, strategy={}",
+                    event.symbol(), event.orderId(), strategyName);
+            processedFilledOrderIds.remove(event.orderId());
+            return;
+        }
 
         TradingDecision.Direction direction = event.openSide() == Side.BUY
                 ? TradingDecision.Direction.LONG
                 : TradingDecision.Direction.SHORT;
+
+        log.info("========== 开仓成交，开始执行策略保护 ==========");
+        log.info("成交事实: strategy={}, symbol={}, orderId={}, side={}, quantity={}, entryPrice={}",
+                strategy.getName(),
+                event.symbol(),
+                event.orderId(),
+                event.openSide(),
+                event.quantity(),
+                event.entryPrice());
 
         try {
             ProtectionConfig protection = strategy.calculateProtection(
                     event.symbol(), direction, event.quantity(), event.entryPrice());
 
             log.info("策略保护配置已生成: strategy={}, symbol={}, enabled={}, tp={}, sl={}",
-                    strategy.getName(), event.symbol(), protection != null && protection.enabled(),
+                    strategy.getName(),
+                    event.symbol(),
+                    protection != null && protection.enabled(),
                     protection == null ? null : protection.takeProfitPrice(),
                     protection == null ? null : protection.stopLossPrice());
 
+            if (protection == null || !protection.enabled()) {
+                log.warn("Strategy 明确未启用保护单: strategy={}, symbol={}",
+                        strategy.getName(), event.symbol());
+                return;
+            }
+
             strategyExecutionService.executeProtection(
                     event.symbol(), event.openSide(), event.quantity(), protection);
+
+            log.info("========== 策略保护执行完成 ==========");
+            log.info("保护单请求已发送: strategy={}, symbol={}, orderId={}, tp={}, sl={}",
+                    strategy.getName(),
+                    event.symbol(),
+                    event.orderId(),
+                    protection.takeProfitPrice(),
+                    protection.stopLossPrice());
         } catch (Exception e) {
-            log.error("执行策略保护失败: strategy={}, symbol={}", strategy.getName(), event.symbol(), e);
+            log.error("执行策略保护失败: strategy={}, symbol={}, orderId={}",
+                    strategy.getName(), event.symbol(), event.orderId(), e);
             tradingState.updateExecutionState(event.symbol(), TradingExecutionState.FAILED);
         }
     }
