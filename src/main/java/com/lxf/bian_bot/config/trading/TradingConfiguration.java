@@ -17,7 +17,7 @@ public class TradingConfiguration {
     public TradingConfig tradingConfig() {
         return new TradingConfig(
                 tradingProperties.isEnabled(),
-                tradingProperties.getUsdtAmount(),
+                tradingProperties.getMarginAmount(),
                 tradingProperties.getOrderType(),
                 tradingProperties.getLimitPriceSource(),
                 tradingProperties.isTakeProfitStopLossEnabled(),
